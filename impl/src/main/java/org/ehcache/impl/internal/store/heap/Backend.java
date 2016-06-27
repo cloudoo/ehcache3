@@ -16,8 +16,8 @@
 
 package org.ehcache.impl.internal.store.heap;
 
-import org.ehcache.config.EvictionVeto;
-import org.ehcache.core.spi.cache.Store;
+import org.ehcache.config.EvictionAdvisor;
+import org.ehcache.core.spi.store.Store;
 import org.ehcache.core.spi.function.BiFunction;
 import org.ehcache.impl.internal.store.heap.holders.OnHeapValueHolder;
 
@@ -37,7 +37,9 @@ interface Backend<K, V> {
 
   OnHeapValueHolder<V> compute(K key, BiFunction<K, OnHeapValueHolder<V>, OnHeapValueHolder<V>> biFunction);
 
-  void clear();
+  Backend<K, V> clear();
+
+  Map<K, OnHeapValueHolder<V>> removeAllWithHash(int hash);
 
   Iterable<K> keySet();
 
@@ -51,7 +53,28 @@ interface Backend<K, V> {
 
   boolean replace(K key, OnHeapValueHolder<V> oldValue, OnHeapValueHolder<V> newValue);
 
-  int size();
+  /**
+   * Returns the number of mappings
+   *
+   * @return the number of mappings
+   */
+  long mappingCount();
 
-  Map.Entry<K, OnHeapValueHolder<V>> getEvictionCandidate(Random random, int size, final Comparator<? super Store.ValueHolder<V>> prioritizer, final EvictionVeto<Object, OnHeapValueHolder<?>> evictionVeto);
+  /**
+   * Returns the computed size in bytes, if configured to do so
+   *
+   * @return the computed size in bytes
+   */
+  long byteSize();
+
+  /**
+   * Returns the natural size, that is byte sized if configured, count size otherwise.
+   *
+   * @return the natural size
+   */
+  long naturalSize();
+
+  void updateUsageInBytesIfRequired(long delta);
+
+  Map.Entry<K, OnHeapValueHolder<V>> getEvictionCandidate(Random random, int size, final Comparator<? super Store.ValueHolder<V>> prioritizer, final EvictionAdvisor<Object, OnHeapValueHolder<?>> evictionAdvisor);
 }

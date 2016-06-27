@@ -17,13 +17,14 @@
 package org.ehcache.impl.internal.store.offheap;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
 import org.ehcache.core.spi.function.BiFunction;
 import org.ehcache.core.spi.function.Function;
 import org.terracotta.offheapstore.Segment;
 
-public interface EhcacheOffHeapBackingMap<K, V> extends ConcurrentMap<K, V> {
+public interface EhcacheOffHeapBackingMap<K, V> extends ConcurrentMap<K, V>, OffHeapMapStatistics {
 
   /**
    * Computes a new mapping for the given key by calling the function passed in. It will pin the mapping
@@ -86,4 +87,7 @@ public interface EhcacheOffHeapBackingMap<K, V> extends ConcurrentMap<K, V> {
   List<Segment<K, V>> getSegments();
 
   boolean shrinkOthers(int excludedHash);
+
+  Map<K, V> removeAllWithHash(int hash);
+
 }

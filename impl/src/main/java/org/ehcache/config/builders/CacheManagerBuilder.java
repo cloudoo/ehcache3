@@ -18,16 +18,18 @@ package org.ehcache.config.builders;
 
 import org.ehcache.CacheManager;
 import org.ehcache.PersistentCacheManager;
+import org.ehcache.config.Builder;
 import org.ehcache.config.CacheConfiguration;
 import org.ehcache.config.Configuration;
 import org.ehcache.config.units.MemoryUnit;
 import org.ehcache.core.EhcacheManager;
+import org.ehcache.core.spi.store.heap.SizeOfEngine;
 import org.ehcache.impl.config.copy.DefaultCopyProviderConfiguration;
 import org.ehcache.impl.config.event.CacheEventDispatcherFactoryConfiguration;
 import org.ehcache.impl.config.loaderwriter.writebehind.WriteBehindProviderConfiguration;
 import org.ehcache.impl.config.persistence.CacheManagerPersistenceConfiguration;
 import org.ehcache.impl.config.serializer.DefaultSerializationProviderConfiguration;
-import org.ehcache.impl.config.sizeof.DefaultSizeOfEngineProviderConfiguration;
+import org.ehcache.impl.config.store.heap.DefaultSizeOfEngineProviderConfiguration;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreProviderConfiguration;
 import org.ehcache.spi.copy.Copier;
 import org.ehcache.spi.serialization.Serializer;
@@ -42,9 +44,9 @@ import java.util.Set;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.unmodifiableSet;
 import static org.ehcache.config.builders.ConfigurationBuilder.newConfigurationBuilder;
-import static org.ehcache.impl.config.sizeof.DefaultSizeOfEngineConfiguration.DEFAULT_MAX_OBJECT_SIZE;
-import static org.ehcache.impl.config.sizeof.DefaultSizeOfEngineConfiguration.DEFAULT_OBJECT_GRAPH_SIZE;
-import static org.ehcache.impl.config.sizeof.DefaultSizeOfEngineConfiguration.DEFAULT_UNIT;
+import static org.ehcache.impl.config.store.heap.DefaultSizeOfEngineConfiguration.DEFAULT_MAX_OBJECT_SIZE;
+import static org.ehcache.impl.config.store.heap.DefaultSizeOfEngineConfiguration.DEFAULT_OBJECT_GRAPH_SIZE;
+import static org.ehcache.impl.config.store.heap.DefaultSizeOfEngineConfiguration.DEFAULT_UNIT;
 
 /**
  * The {@code CacheManagerBuilder} enables building cache managers using a fluent style.
@@ -134,22 +136,22 @@ public class CacheManagerBuilder<T extends CacheManager> implements Builder<T> {
 
   /**
    * Convenience method to add a {@link CacheConfiguration} linked to the specified alias to the returned builder by
-   * building it from the provided {@link CacheConfigurationBuilder}.
+   * building it from the provided {@link Builder}.
    *
    * @param alias the cache alias
-   * @param configurationBuilder the {@code CacheConfigurationBuilder} to get {@code CacheConfiguration} from
+   * @param configurationBuilder the {@code Builder} to get {@code CacheConfiguration} from
    * @param <K> the cache key type
    * @param <V> the cache value type
    * @return a new builder with the added cache configuration
    *
    * @see CacheConfigurationBuilder
    */
-  public <K, V> CacheManagerBuilder<T> withCache(String alias, CacheConfigurationBuilder<K, V> configurationBuilder) {
+  public <K, V> CacheManagerBuilder<T> withCache(String alias, Builder<? extends CacheConfiguration<K, V>> configurationBuilder) {
     return withCache(alias, configurationBuilder.build());
   }
 
   /**
-   * Specifies the returned {@link CacheManager} subtype through a specific {@link CacheManagerConfiguration} which
+   * Specializes the returned {@link CacheManager} subtype through a specific {@link CacheManagerConfiguration} which
    * will optionally add configurations to the returned builder.
    *
    * @param cfg the {@code CacheManagerConfiguration} to use
@@ -162,6 +164,19 @@ public class CacheManagerBuilder<T extends CacheManager> implements Builder<T> {
    */
   public <N extends T> CacheManagerBuilder<N> with(CacheManagerConfiguration<N> cfg) {
     return cfg.builder(this);
+  }
+
+  /**
+   * Convenience method to specialize the returned {@link CacheManager} subtype through a {@link CacheManagerConfiguration}
+   * built using the provided {@link Builder}.
+   *
+   * @param cfgBuilder the {@code Builder} to get the {@code CacheManagerConfiguration} from
+   * @return a new builder ready to build a more specific subtype of cache manager
+   *
+   * @see CacheConfigurationBuilder
+   */
+  public <N extends T> CacheManagerBuilder<N> with(Builder<? extends CacheManagerConfiguration<N>> cfgBuilder) {
+    return with(cfgBuilder.build());
   }
 
   /**
@@ -221,7 +236,7 @@ public class CacheManagerBuilder<T extends CacheManager> implements Builder<T> {
   }
 
   /**
-   * Adds a default {@link org.ehcache.core.spi.sizeof.SizeOfEngine} configuration, that limits the max object graph to
+   * Adds a default {@link SizeOfEngine} configuration, that limits the max object graph to
    * size, to the returned builder.
    *
    * @param size the max object graph size
@@ -238,7 +253,7 @@ public class CacheManagerBuilder<T extends CacheManager> implements Builder<T> {
   }
 
   /**
-   * Adds a default {@link org.ehcache.core.spi.sizeof.SizeOfEngine} configuration, that limits the max object size, to
+   * Adds a default {@link SizeOfEngine} configuration, that limits the max object size, to
    * the returned builder.
    *
    * @param size the max object size

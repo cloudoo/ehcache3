@@ -16,13 +16,12 @@
 
 package org.ehcache.impl.internal.store.offheap;
 
-import org.ehcache.core.spi.cache.Store;
-import org.ehcache.core.spi.cache.tiering.BinaryValueHolder;
-import org.ehcache.exceptions.SerializerException;
+import org.ehcache.core.spi.store.Store;
+import org.ehcache.impl.internal.store.BinaryValueHolder;
+import org.ehcache.spi.serialization.SerializerException;
 import org.ehcache.impl.internal.store.offheap.portability.OffHeapValueHolderPortability;
 import org.ehcache.spi.serialization.Serializer;
 import org.terracotta.offheapstore.storage.portability.WriteContext;
-import org.terracotta.offheapstore.util.FindbugsSuppressWarnings;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -31,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 /**
 * OffHeapValueHolder variant that supports lazy deserialization and also serving the binary value if detached.
 */
-@FindbugsSuppressWarnings("SE_BAD_FIELD")
 public final class LazyOffHeapValueHolder<V> extends OffHeapValueHolder<V> implements BinaryValueHolder {
 
   private final Serializer<V> valueSerializer;

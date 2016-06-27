@@ -21,12 +21,12 @@ import org.ehcache.config.CacheConfiguration;
 import org.ehcache.core.config.BaseCacheConfiguration;
 import org.ehcache.core.config.ResourcePoolsHelper;
 import org.ehcache.core.events.CacheEventDispatcher;
-import org.ehcache.core.exceptions.CachePassThroughException;
-import org.ehcache.core.spi.cache.Store;
-import org.ehcache.core.spi.cache.events.StoreEventSource;
-import org.ehcache.exceptions.BulkCacheLoadingException;
-import org.ehcache.exceptions.BulkCacheWritingException;
-import org.ehcache.exceptions.CacheAccessException;
+import org.ehcache.core.exceptions.StorePassThroughException;
+import org.ehcache.core.spi.store.Store;
+import org.ehcache.core.spi.store.events.StoreEventSource;
+import org.ehcache.spi.loaderwriter.BulkCacheLoadingException;
+import org.ehcache.spi.loaderwriter.BulkCacheWritingException;
+import org.ehcache.core.spi.store.StoreAccessException;
 import org.ehcache.core.spi.function.BiFunction;
 import org.ehcache.core.spi.function.Function;
 import org.ehcache.core.spi.function.NullaryFunction;
@@ -239,7 +239,6 @@ public abstract class EhcacheBasicCrudBase {
    * The contract implemented by this {@code Store} is not strictly conformant but
    * should be sufficient for {@code Ehcache} implementation testing.
    */
-  // TODO: Use a validated Store implementation.
   protected static class FakeStore implements Store<String, String> {
 
     private final CacheConfigurationChangeListener cacheConfigurationChangeListener = new CacheConfigurationChangeListener() {
@@ -297,7 +296,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public ValueHolder<String> get(final String key) throws CacheAccessException {
+    public ValueHolder<String> get(final String key) throws StoreAccessException {
       this.checkFailingKey(key);
       final FakeValueHolder valueHolder = this.entries.get(key);
       if (valueHolder != null) {
@@ -307,13 +306,13 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public boolean containsKey(final String key) throws CacheAccessException {
+    public boolean containsKey(final String key) throws StoreAccessException {
       this.checkFailingKey(key);
       return this.entries.containsKey(key);
     }
 
     @Override
-    public PutStatus put(final String key, final String value) throws CacheAccessException {
+    public PutStatus put(final String key, final String value) throws StoreAccessException {
       this.checkFailingKey(key);
       FakeValueHolder toPut = new FakeValueHolder(value);
       if (this.entries.put(key, toPut) != null) {
@@ -323,7 +322,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public ValueHolder<String> putIfAbsent(final String key, final String value) throws CacheAccessException {
+    public ValueHolder<String> putIfAbsent(final String key, final String value) throws StoreAccessException {
       this.checkFailingKey(key);
       final FakeValueHolder currentValue = this.entries.get(key);
       if (currentValue == null) {
@@ -335,7 +334,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public boolean remove(final String key) throws CacheAccessException {
+    public boolean remove(final String key) throws StoreAccessException {
       this.checkFailingKey(key);
       if (this.entries.remove(key) == null) {
         return false;
@@ -344,7 +343,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public RemoveStatus remove(final String key, final String value) throws CacheAccessException {
+    public RemoveStatus remove(final String key, final String value) throws StoreAccessException {
       this.checkFailingKey(key);
       final ValueHolder<String> currentValue = this.entries.get(key);
       if (currentValue == null) {
@@ -357,7 +356,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public ValueHolder<String> replace(final String key, final String value) throws CacheAccessException {
+    public ValueHolder<String> replace(final String key, final String value) throws StoreAccessException {
       this.checkFailingKey(key);
       final ValueHolder<String> currentValue = this.entries.get(key);
       if (currentValue != null) {
@@ -367,7 +366,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public ReplaceStatus replace(final String key, final String oldValue, final String newValue) throws CacheAccessException {
+    public ReplaceStatus replace(final String key, final String oldValue, final String newValue) throws StoreAccessException {
       this.checkFailingKey(key);
       final ValueHolder<String> currentValue = this.entries.get(key);
       if (currentValue == null) {
@@ -381,7 +380,7 @@ public abstract class EhcacheBasicCrudBase {
     }
 
     @Override
-    public void clear() throws CacheAccessException {
+    public void clear() throws StoreAccessException {
       this.entries.clear();
     }
 
@@ -411,7 +410,7 @@ public abstract class EhcacheBasicCrudBase {
         }
 
         @Override
-        public Cache.Entry<String, ValueHolder<String>> next() throws CacheAccessException {
+        public Cache.Entry<String, ValueHolder<String>> next() throws StoreAccessException {
 
           final Map.Entry<String, FakeValueHolder> cacheEntry = this.iterator.next();
           FakeStore.this.checkFailingKey(cacheEntry.getKey());
@@ -442,15 +441,12 @@ public abstract class EhcacheBasicCrudBase {
      */
     @Override
     public ValueHolder<String> compute(final String key, final BiFunction<? super String, ? super String, ? extends String> mappingFunction)
-        throws CacheAccessException {
+        throws StoreAccessException {
       return this.compute(key, mappingFunction, REPLACE_EQUAL_TRUE);
     }
 
     /**
-     * Common core for the
-     * {@link #compute(String, BiFunction, NullaryFunction)} and
-     * {@link #computeIfPresent(String, BiFunction, NullaryFunction)}
-     * methods.
+     * Common core for the {@link #compute(String, BiFunction, NullaryFunction)} method.
      *
      * @param key the key of the entry to process
      * @param currentValue the existing value, if any, for {@code key}
@@ -469,19 +465,19 @@ public abstract class EhcacheBasicCrudBase {
         final String key,
         final FakeValueHolder currentValue,
         final BiFunction<? super String, ? super String, ? extends String> mappingFunction,
-        final NullaryFunction<Boolean> replaceEqual) throws CacheAccessException {
+        final NullaryFunction<Boolean> replaceEqual) throws StoreAccessException {
 
       String remappedValue = null;
       try {
         remappedValue = mappingFunction.apply(key, (currentValue == null ? null : currentValue.value()));
-      } catch (CachePassThroughException cpte) {
+      } catch (StorePassThroughException cpte) {
         Throwable cause = cpte.getCause();
         if(cause instanceof RuntimeException) {
           throw   (RuntimeException) cause;
-        } else if(cause instanceof CacheAccessException){
-          throw   (CacheAccessException) cause;
+        } else if(cause instanceof StoreAccessException){
+          throw   (StoreAccessException) cause;
         } else {
-          throw new CacheAccessException(cause);
+          throw new StoreAccessException(cause);
         }
       }
       FakeValueHolder newValue = (remappedValue == null ? null : new FakeValueHolder(remappedValue));
@@ -510,7 +506,7 @@ public abstract class EhcacheBasicCrudBase {
         final String key,
         final BiFunction<? super String, ? super String, ? extends String> mappingFunction,
         final NullaryFunction<Boolean> replaceEqual)
-        throws CacheAccessException {
+        throws StoreAccessException {
       this.checkFailingKey(key);
 
       return this.computeInternal(key, this.entries.get(key), mappingFunction, replaceEqual);
@@ -518,21 +514,21 @@ public abstract class EhcacheBasicCrudBase {
 
     @Override
     public ValueHolder<String> computeIfAbsent(final String key, final Function<? super String, ? extends String> mappingFunction)
-        throws CacheAccessException {
+        throws StoreAccessException {
       this.checkFailingKey(key);
       FakeValueHolder currentValue = this.entries.get(key);
       if (currentValue == null) {
         String newValue = null;
         try {
           newValue = mappingFunction.apply(key);
-        } catch (CachePassThroughException cpte) {
+        } catch (StorePassThroughException cpte) {
           Throwable cause = cpte.getCause();
           if(cause instanceof RuntimeException) {
             throw   (RuntimeException) cause;
-          } else if(cause instanceof CacheAccessException){
-            throw   (CacheAccessException) cause;
+          } else if(cause instanceof StoreAccessException){
+            throw   (StoreAccessException) cause;
           } else {
-            throw new CacheAccessException(cause);
+            throw new StoreAccessException(cause);
           }
         }
         if (newValue != null) {
@@ -546,26 +542,6 @@ public abstract class EhcacheBasicCrudBase {
       return currentValue;
     }
 
-    @Override
-    public ValueHolder<String> computeIfPresent(final String key, final BiFunction<? super String, ? super String, ? extends String> remappingFunction)
-        throws CacheAccessException {
-      return this.computeIfPresent(key, remappingFunction, REPLACE_EQUAL_TRUE);
-    }
-
-    @Override
-    public ValueHolder<String> computeIfPresent(
-        final String key,
-        final BiFunction<? super String, ? super String, ? extends String> remappingFunction,
-        final NullaryFunction<Boolean> replaceEqual) throws CacheAccessException {
-      this.checkFailingKey(key);
-
-      final FakeValueHolder currentValue = this.entries.get(key);
-      if (currentValue == null) {
-        return null;
-      }
-      return this.computeInternal(key, this.entries.get(key), remappingFunction, replaceEqual);
-    }
-
     /**
      * {@inheritDoc}
      * <p/>
@@ -577,7 +553,7 @@ public abstract class EhcacheBasicCrudBase {
     public Map<String, ValueHolder<String>> bulkCompute(
         final Set<? extends String> keys,
         final Function<Iterable<? extends Map.Entry<? extends String, ? extends String>>, Iterable<? extends Map.Entry<? extends String, ? extends String>>> remappingFunction)
-        throws CacheAccessException {
+        throws StoreAccessException {
       return this.bulkCompute(keys, remappingFunction, REPLACE_EQUAL_TRUE);
     }
 
@@ -592,7 +568,7 @@ public abstract class EhcacheBasicCrudBase {
         final Set<? extends String> keys,
         final Function<Iterable<? extends Entry<? extends String, ? extends String>>, Iterable<? extends Entry<? extends String, ? extends String>>> remappingFunction,
         final NullaryFunction<Boolean> replaceEqual)
-        throws CacheAccessException {
+        throws StoreAccessException {
 
       final Map<String, ValueHolder<String>> resultMap = new LinkedHashMap<String, ValueHolder<String>>();
       for (final String key : keys) {
@@ -624,7 +600,7 @@ public abstract class EhcacheBasicCrudBase {
      */
     @Override
     public Map<String, ValueHolder<String>> bulkComputeIfAbsent(final Set<? extends String> keys, final Function<Iterable<? extends String>, Iterable<? extends Map.Entry<? extends String, ? extends String>>> mappingFunction)
-        throws CacheAccessException {
+        throws StoreAccessException {
       final Map<String, ValueHolder<String>> resultMap = new LinkedHashMap<String, ValueHolder<String>>();
       for (final String key : keys) {
         final ValueHolder<String> newValue = this.computeIfAbsent(key, new Function<String, String>() {
@@ -648,9 +624,9 @@ public abstract class EhcacheBasicCrudBase {
       return configurationChangeListenerList;
     }
 
-    private void checkFailingKey(final String key) throws CacheAccessException {
+    private void checkFailingKey(final String key) throws StoreAccessException {
       if (this.failingKeys.contains(key)) {
-        throw new CacheAccessException(String.format("Accessing failing key: %s", key));
+        throw new StoreAccessException(String.format("Accessing failing key: %s", key));
       }
     }
 
@@ -776,7 +752,7 @@ public abstract class EhcacheBasicCrudBase {
     /**
      * The entry key causing the {@link #writeAll(Iterable)} and {@link #deleteAll(Iterable)}
      * methods to fail by throwing an exception <i>other</i> than a
-     * {@link org.ehcache.exceptions.BulkCacheWritingException BulkCacheWritingException}.
+     * {@link BulkCacheWritingException BulkCacheWritingException}.
      *
      * @see #setCompleteFailureKey
      */
@@ -808,7 +784,7 @@ public abstract class EhcacheBasicCrudBase {
     /**
      * Sets the key causing the {@link #writeAll(Iterable)} and {@link #deleteAll(Iterable)}
      * methods to throw an exception <i>other</i> that a
-     * {@link org.ehcache.exceptions.BulkCacheWritingException BulkCacheWritingException}.
+     * {@link BulkCacheWritingException BulkCacheWritingException}.
      * <p/>
      * If a complete failure is recognized, the cache image maintained by this instance
      * is in an inconsistent state.
@@ -830,7 +806,7 @@ public abstract class EhcacheBasicCrudBase {
      * {@inheritDoc}
      * <p/>
      * If this method throws an exception <i>other</i> than a
-     * {@link org.ehcache.exceptions.BulkCacheWritingException BulkCacheWritingException}, the
+     * {@link BulkCacheWritingException BulkCacheWritingException}, the
      * cache image maintained by this {@code CacheLoaderWriter} is in an inconsistent state.
      */
     @Override
@@ -869,7 +845,7 @@ public abstract class EhcacheBasicCrudBase {
      * {@inheritDoc}
      * <p/>
      * If this method throws an exception <i>other</i> than a
-     * {@link org.ehcache.exceptions.BulkCacheWritingException BulkCacheWritingException}, the
+     * {@link BulkCacheWritingException BulkCacheWritingException}, the
      * cache image maintained by this {@code CacheLoaderWriter} is in an inconsistent state.
      */
     @Override

@@ -16,8 +16,8 @@
 
 package org.ehcache.core.events;
 
-import org.ehcache.core.spi.cache.Store;
-import org.ehcache.core.spi.cache.events.StoreEventSource;
+import org.ehcache.core.spi.store.Store;
+import org.ehcache.core.spi.store.events.StoreEventSource;
 
 /**
  * Part of the events subsystem at the {@link Store} level.
@@ -52,4 +52,11 @@ public interface StoreEventDispatcher<K, V> extends StoreEventSource<K, V> {
    * @param throwable the exception
    */
   void releaseEventSinkAfterFailure(StoreEventSink<K, V> eventSink, Throwable throwable);
+
+  /**
+   * Reset an event sink by dropping all queued events.
+   *
+   * @param eventSink the event sink to reset
+   */
+  void reset(StoreEventSink<K, V> eventSink);
 }

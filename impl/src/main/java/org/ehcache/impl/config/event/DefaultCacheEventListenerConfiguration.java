@@ -17,8 +17,8 @@
 package org.ehcache.impl.config.event;
 
 import org.ehcache.event.CacheEventListener;
-import org.ehcache.event.CacheEventListenerConfiguration;
-import org.ehcache.event.CacheEventListenerProvider;
+import org.ehcache.core.events.CacheEventListenerConfiguration;
+import org.ehcache.core.events.CacheEventListenerProvider;
 import org.ehcache.event.EventFiring;
 import org.ehcache.event.EventOrdering;
 import org.ehcache.event.EventType;
@@ -28,7 +28,10 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * {@link CacheEventListenerConfiguration} implementation
+ * {@link org.ehcache.spi.service.ServiceConfiguration} for the default {@link CacheEventListenerProvider}.
+ * <P>
+ *   Enables configuring a {@link CacheEventListener} for a given cache.
+ * </P>
  */
 public class DefaultCacheEventListenerConfiguration extends ClassInstanceConfiguration<CacheEventListener<?, ?>>
     implements CacheEventListenerConfiguration {

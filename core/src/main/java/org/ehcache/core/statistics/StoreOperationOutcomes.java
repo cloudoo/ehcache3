@@ -45,7 +45,11 @@ public interface StoreOperationOutcomes {
     /**
      * replaced
      */
-    REPLACED
+    REPLACED,
+    /**
+     * no-op
+     */
+    NOOP
   }
 
   /**
@@ -156,28 +160,6 @@ public interface StoreOperationOutcomes {
      * no-op
      */
     NOOP
-  }
-
-  /**
-   * the computeIfPresent outcomes
-   */
-  enum ComputeIfPresentOutcome implements StoreOperationOutcomes {
-    /**
-     * miss
-     */
-    MISS,
-    /**
-     * hit
-     */
-    HIT,
-    /**
-     * put
-     */
-    PUT,
-    /**
-     * removed
-     */
-    REMOVED
   }
 
   /**

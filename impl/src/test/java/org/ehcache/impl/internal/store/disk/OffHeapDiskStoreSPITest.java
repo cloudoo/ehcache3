@@ -16,13 +16,14 @@
 
 package org.ehcache.impl.internal.store.disk;
 
-import org.ehcache.config.EvictionVeto;
-import org.ehcache.config.ResourcePool;
+import org.ehcache.config.CacheConfiguration;
+import org.ehcache.config.EvictionAdvisor;
 import org.ehcache.config.ResourcePools;
-import org.ehcache.core.config.store.StoreConfigurationImpl;
+import org.ehcache.core.internal.store.StoreConfigurationImpl;
+import org.ehcache.config.SizedResourcePool;
 import org.ehcache.config.builders.ResourcePoolsBuilder;
 import org.ehcache.config.units.MemoryUnit;
-import org.ehcache.exceptions.CachePersistenceException;
+import org.ehcache.CachePersistenceException;
 import org.ehcache.expiry.Expirations;
 import org.ehcache.expiry.Expiry;
 import org.ehcache.impl.internal.concurrent.ConcurrentHashMap;
@@ -37,11 +38,11 @@ import org.ehcache.impl.serialization.JavaSerializer;
 import org.ehcache.internal.store.StoreFactory;
 import org.ehcache.internal.tier.AuthoritativeTierFactory;
 import org.ehcache.internal.tier.AuthoritativeTierSPITest;
-import org.ehcache.core.spi.ServiceLocator;
-import org.ehcache.core.spi.cache.Store;
-import org.ehcache.core.spi.cache.tiering.AuthoritativeTier;
+import org.ehcache.core.internal.service.ServiceLocator;
+import org.ehcache.core.spi.store.Store;
+import org.ehcache.core.spi.store.tiering.AuthoritativeTier;
 import org.ehcache.spi.serialization.Serializer;
-import org.ehcache.core.spi.service.LocalPersistenceService.PersistenceSpaceIdentifier;
+import org.ehcache.spi.persistence.PersistableResourceService.PersistenceSpaceIdentifier;
 import org.ehcache.spi.service.ServiceConfiguration;
 import org.ehcache.spi.test.After;
 import org.junit.Before;
@@ -54,6 +55,9 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.ehcache.config.ResourceType.Core.DISK;
+import static org.ehcache.config.builders.ResourcePoolsBuilder.newResourcePoolsBuilder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * OffHeapStoreSPITest
@@ -86,29 +90,31 @@ public class OffHeapDiskStoreSPITest extends AuthoritativeTierSPITest<String, St
       }
 
       @Override
-      public AuthoritativeTier<String, String> newStoreWithExpiry(Expiry<String, String> expiry, TimeSource timeSource) {
+      public AuthoritativeTier<String, String> newStoreWithExpiry(Expiry<? super String, ? super String> expiry, TimeSource timeSource) {
         return newStore(null, null, expiry, timeSource);
       }
 
       @Override
-      public AuthoritativeTier<String, String> newStoreWithEvictionVeto(EvictionVeto<String, String> evictionVeto) {
-        return newStore(null, evictionVeto, Expirations.noExpiration(), SystemTimeSource.INSTANCE);
+      public AuthoritativeTier<String, String> newStoreWithEvictionAdvisor(EvictionAdvisor<String, String> evictionAdvisor) {
+        return newStore(null, evictionAdvisor, Expirations.noExpiration(), SystemTimeSource.INSTANCE);
       }
 
 
-      private AuthoritativeTier<String, String> newStore(Long capacity, EvictionVeto<String, String> evictionVeto, Expiry<? super String, ? super String> expiry, TimeSource timeSource) {
+      private AuthoritativeTier<String, String> newStore(Long capacity, EvictionAdvisor<String, String> evictionAdvisor, Expiry<? super String, ? super String> expiry, TimeSource timeSource) {
         Serializer<String> keySerializer = new JavaSerializer<String>(getClass().getClassLoader());
         Serializer<String> valueSerializer = new JavaSerializer<String>(getClass().getClassLoader());
 
         try {
+          CacheConfiguration cacheConfiguration = mock(CacheConfiguration.class);
+          when(cacheConfiguration.getResourcePools()).thenReturn(newResourcePoolsBuilder().disk(1, MemoryUnit.MB, false).build());
           String spaceName = "OffheapDiskStore-" + index.getAndIncrement();
-          PersistenceSpaceIdentifier space = persistenceService.getOrCreatePersistenceSpace(spaceName);
+          PersistenceSpaceIdentifier space = persistenceService.getPersistenceSpaceIdentifier(spaceName, cacheConfiguration);
           ResourcePools resourcePools = getDiskResourcePool(capacity);
-          ResourcePool diskPool = resourcePools.getPoolForResource(DISK);
+          SizedResourcePool diskPool = resourcePools.getPoolForResource(DISK);
           MemoryUnit unit = (MemoryUnit)diskPool.getUnit();
 
           Store.Configuration<String, String> config = new StoreConfigurationImpl<String, String>(getKeyType(), getValueType(),
-              evictionVeto, getClass().getClassLoader(), expiry, resourcePools, 0, keySerializer, valueSerializer);
+              evictionAdvisor, getClass().getClassLoader(), expiry, resourcePools, 0, keySerializer, valueSerializer);
           OffHeapDiskStore<String, String> store = new OffHeapDiskStore<String, String>(
                   persistenceService.createPersistenceContextWithin(space, "store"),
                   new OnDemandExecutionService(), null, 1,
@@ -127,7 +133,7 @@ public class OffHeapDiskStoreSPITest extends AuthoritativeTierSPITest<String, St
         if (capacityConstraint == null) {
           capacityConstraint = 10L;
         }
-        return ResourcePoolsBuilder.newResourcePoolsBuilder().disk((Long) capacityConstraint, MemoryUnit.MB).build();
+        return newResourcePoolsBuilder().disk((Long) capacityConstraint, MemoryUnit.MB).build();
       }
 
       @Override
@@ -148,8 +154,10 @@ public class OffHeapDiskStoreSPITest extends AuthoritativeTierSPITest<String, St
       @Override
       public ServiceConfiguration<?>[] getServiceConfigurations() {
         try {
+          CacheConfiguration cacheConfiguration = mock(CacheConfiguration.class);
+          when(cacheConfiguration.getResourcePools()).thenReturn(newResourcePoolsBuilder().disk(1, MemoryUnit.MB, false).build());
           String spaceName = "OffheapDiskStore-" + index.getAndIncrement();
-          PersistenceSpaceIdentifier space = persistenceService.getOrCreatePersistenceSpace(spaceName);
+          PersistenceSpaceIdentifier space = persistenceService.getPersistenceSpaceIdentifier(spaceName, cacheConfiguration);
           return new ServiceConfiguration[] {space};
         } catch (CachePersistenceException e) {
           throw new RuntimeException(e);

@@ -16,24 +16,25 @@
 
 package org.ehcache.core.config.store;
 
-import org.ehcache.core.spi.cache.Store;
+import org.ehcache.core.internal.store.StoreConfigurationImpl;
+import org.ehcache.core.spi.store.Store;
 import org.ehcache.spi.service.ServiceConfiguration;
 
 /**
- * {@link ServiceConfiguration} used by the {@link org.ehcache.core.EhcacheManager} to populate the ordered event
- * parallelism in the {@link StoreConfigurationImpl}.
+ * {@link ServiceConfiguration} used by the {@link org.ehcache.core.EhcacheManager} to populate the dispatcher
+ * concurrency in the {@link StoreConfigurationImpl}.
  */
 public interface StoreEventSourceConfiguration extends ServiceConfiguration<Store.Provider> {
 
   /**
-   * Default ordered event parallelism
+   * Default dispatcher concurrency
    */
-  int DEFAULT_EVENT_PARALLELISM = 8;
+  int DEFAULT_DISPATCHER_CONCURRENCY = 8;
 
   /**
    * Indicates over how many buckets should ordered events be spread
    *
    * @return the number of buckets to use
    */
-  int getOrderedEventParallelism();
+  int getDispatcherConcurrency();
 }

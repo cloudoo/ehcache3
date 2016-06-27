@@ -18,8 +18,8 @@ package org.ehcache.core;
 
 import org.ehcache.Status;
 import org.ehcache.core.events.StateChangeListener;
-import org.ehcache.exceptions.StateTransitionException;
-import org.ehcache.spi.LifeCycled;
+import org.ehcache.StateTransitionException;
+import org.ehcache.core.spi.LifeCycled;
 import org.slf4j.Logger;
 
 import java.util.ArrayDeque;
@@ -213,12 +213,21 @@ final class StatusTransitioner {
         fireTransitionEvent(st.from().toPublicStatus(), st.to().toPublicStatus());
       } finally {
         maintenanceLease = thread;
-        logger.info("{} successful.", action);
+        logger.debug("{} successful.", action);
       }
     }
 
     public StateTransitionException failed(Throwable t) {
+      if (st.done()) {
+        if (t != null) {
+          throw new AssertionError("Throwable cannot be null if Transition is done.");
+        }
+        return null;
+      }
       st.failed();
+      if (t == null) {
+        return null;
+      }
       logger.error("{} failed.", action);
       if(t instanceof StateTransitionException) {
         return (StateTransitionException) t;

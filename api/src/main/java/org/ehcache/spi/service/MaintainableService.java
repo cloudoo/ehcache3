@@ -16,11 +16,11 @@
 
 package org.ehcache.spi.service;
 
-import org.ehcache.spi.ServiceProvider;
-
 /**
- * Specific {@link Service} interface that indicates that the service participates in maintenance mode
+ * {@link Service} interface that indicates that implementing services participate in
+ * {@link org.ehcache.Status#MAINTENANCE MAINTENANCE} mode.
  */
+@PluralService
 public interface MaintainableService extends Service {
   /**
    * Start this service for maintenance, based on its default configuration.

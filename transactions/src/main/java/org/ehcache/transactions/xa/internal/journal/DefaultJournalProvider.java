@@ -16,8 +16,9 @@
 
 package org.ehcache.transactions.xa.internal.journal;
 
-import org.ehcache.exceptions.CachePersistenceException;
-import org.ehcache.spi.ServiceProvider;
+import org.ehcache.CachePersistenceException;
+import org.ehcache.spi.persistence.PersistableResourceService;
+import org.ehcache.spi.service.ServiceProvider;
 import org.ehcache.spi.serialization.Serializer;
 import org.ehcache.core.spi.service.FileBasedPersistenceContext;
 import org.ehcache.core.spi.service.LocalPersistenceService;
@@ -45,7 +46,7 @@ public class DefaultJournalProvider implements JournalProvider {
   }
 
   @Override
-  public <K> Journal<K> getJournal(LocalPersistenceService.PersistenceSpaceIdentifier persistentSpaceId, Serializer<K> keySerializer) {
+  public <K> Journal<K> getJournal(PersistableResourceService.PersistenceSpaceIdentifier<?> persistentSpaceId, Serializer<K> keySerializer) {
     if (persistentSpaceId == null) {
       LOGGER.info("Using transient XAStore journal");
       return new TransientJournal<K>();

@@ -23,7 +23,7 @@ import org.ehcache.config.CacheConfiguration;
 import org.ehcache.core.config.BaseCacheConfiguration;
 import org.ehcache.core.config.ResourcePoolsHelper;
 import org.ehcache.core.statistics.CacheOperationOutcomes;
-import org.ehcache.exceptions.CacheAccessException;
+import org.ehcache.core.spi.store.StoreAccessException;
 import org.ehcache.expiry.Expirations;
 import org.hamcrest.Matchers;
 import org.junit.Test;
@@ -36,6 +36,7 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Matchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -131,17 +132,17 @@ public class EhcacheBasicPutIfAbsentTest extends EhcacheBasicCrudBase {
    * </ul>
    */
   @Test
-  public void testPutIfAbsentNoStoreEntryCacheAccessException() throws Exception {
+  public void testPutIfAbsentNoStoreEntryStoreAccessException() throws Exception {
     final FakeStore fakeStore = new FakeStore(Collections.<String, String>emptyMap());
     this.store = spy(fakeStore);
-    doThrow(new CacheAccessException("")).when(this.store).putIfAbsent(eq("key"), eq("value"));
+    doThrow(new StoreAccessException("")).when(this.store).putIfAbsent(eq("key"), eq("value"));
 
     final Ehcache<String, String> ehcache = this.getEhcache();
 
     ehcache.putIfAbsent("key", "value");
     verify(this.store).putIfAbsent(eq("key"), eq("value"));
     verify(this.spiedResilienceStrategy)
-        .putIfAbsentFailure(eq("key"), eq("value"), any(CacheAccessException.class), eq(false));
+        .putIfAbsentFailure(eq("key"), eq("value"), isNull(String.class), any(StoreAccessException.class), eq(false));
     validateStats(ehcache, EnumSet.of(CacheOperationOutcomes.PutIfAbsentOutcome.FAILURE));
   }
 
@@ -153,17 +154,17 @@ public class EhcacheBasicPutIfAbsentTest extends EhcacheBasicCrudBase {
    * </ul>
    */
   @Test
-  public void testPutIfAbsentHasStoreEntryCacheAccessException() throws Exception {
+  public void testPutIfAbsentHasStoreEntryStoreAccessException() throws Exception {
     final FakeStore fakeStore = new FakeStore(Collections.singletonMap("key", "oldValue"));
     this.store = spy(fakeStore);
-    doThrow(new CacheAccessException("")).when(this.store).putIfAbsent(eq("key"), eq("value"));
+    doThrow(new StoreAccessException("")).when(this.store).putIfAbsent(eq("key"), eq("value"));
 
     final Ehcache<String, String> ehcache = this.getEhcache();
 
     ehcache.putIfAbsent("key", "value");
     verify(this.store).putIfAbsent(eq("key"), eq("value"));
     verify(this.spiedResilienceStrategy)
-        .putIfAbsentFailure(eq("key"), eq("value"), any(CacheAccessException.class), eq(false));
+        .putIfAbsentFailure(eq("key"), eq("value"), isNull(String.class), any(StoreAccessException.class), eq(false));
     validateStats(ehcache, EnumSet.of(CacheOperationOutcomes.PutIfAbsentOutcome.FAILURE));
   }
 
