@@ -23,9 +23,9 @@ import org.ehcache.clustered.client.internal.UnitTestConnectionService;
 import org.ehcache.clustered.client.internal.UnitTestConnectionService.PassthroughServerBuilder;
 import org.ehcache.clustered.common.Consistency;
 import org.ehcache.clustered.common.ServerSideConfiguration;
-import org.ehcache.clustered.common.ServerStoreConfiguration;
-import org.ehcache.clustered.common.messages.ServerStoreMessageFactory;
-import org.ehcache.clustered.common.store.Chain;
+import org.ehcache.clustered.common.internal.ServerStoreConfiguration;
+import org.ehcache.clustered.common.internal.messages.ServerStoreMessageFactory;
+import org.ehcache.clustered.common.internal.store.Chain;
 import org.ehcache.config.units.MemoryUnit;
 import org.ehcache.impl.serialization.LongSerializer;
 import org.junit.AfterClass;
@@ -43,8 +43,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.ehcache.clustered.common.store.Util.chainsEqual;
-import static org.ehcache.clustered.common.store.Util.createPayload;
+import static org.ehcache.clustered.common.internal.store.Util.chainsEqual;
+import static org.ehcache.clustered.common.internal.store.Util.createPayload;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.core.Is.is;
@@ -77,7 +77,7 @@ public class EventualServerStoreProxyTest {
     clientEntity2 = entityFactory.retrieve("TestCacheManager",
         new ServerSideConfiguration("defaultResource", Collections.<String, ServerSideConfiguration.Pool>emptyMap()));
 
-    ClusteredResourcePool resourcePool = ClusteredResourcePoolBuilder.fixed(16L, MemoryUnit.MB);
+    ClusteredResourcePool resourcePool = ClusteredResourcePoolBuilder.clusteredDedicated(16L, MemoryUnit.MB);
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfiguration(resourcePool.getPoolAllocation(), Long.class.getName(),
         Long.class.getName(), Long.class.getName(), Long.class.getName(), LongSerializer.class.getName(), LongSerializer.class

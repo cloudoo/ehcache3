@@ -16,9 +16,9 @@
 package org.ehcache.clustered.client.internal.store;
 
 import org.ehcache.clustered.client.internal.EhcacheClientEntity;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse;
-import org.ehcache.clustered.common.messages.ServerStoreMessageFactory;
-import org.ehcache.clustered.common.store.Chain;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse;
+import org.ehcache.clustered.common.internal.messages.ServerStoreMessageFactory;
+import org.ehcache.clustered.common.internal.store.Chain;
 import org.ehcache.core.spi.function.NullaryFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -177,7 +177,7 @@ public class StrongServerStoreProxy implements ServerStoreProxy {
     CountDownLatch latch = new CountDownLatch(1);
     while (true) {
       if (!entity.isConnected()) {
-        throw new IllegalStateException("Entity disconnected");
+        throw new IllegalStateException("Clustered tier manager disconnected");
       }
       CountDownLatch countDownLatch = hashInvalidationsInProgress.putIfAbsent(key, latch);
       if (countDownLatch == null) {
@@ -202,7 +202,7 @@ public class StrongServerStoreProxy implements ServerStoreProxy {
     CountDownLatch newLatch = new CountDownLatch(1);
     while (true) {
       if (!entity.isConnected()) {
-        throw new IllegalStateException("Entity disconnected");
+        throw new IllegalStateException("Clustered tier manager disconnected");
       }
 
       CountDownLatch existingLatch;
@@ -246,7 +246,7 @@ public class StrongServerStoreProxy implements ServerStoreProxy {
       LOGGER.debug("Waiting for the server's InvalidationDone message for {}s, backing off {}s...", totalAwaitTime, backoff);
     }
     if (!entity.isConnected()) {
-      throw new IllegalStateException("Entity disconnected");
+      throw new IllegalStateException("Clustered tier manager disconnected");
     }
   }
 

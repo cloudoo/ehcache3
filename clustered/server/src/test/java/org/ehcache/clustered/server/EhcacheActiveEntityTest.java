@@ -15,17 +15,26 @@
  */
 package org.ehcache.clustered.server;
 
-import org.ehcache.clustered.common.ClusteredEhcacheIdentity;
-import org.ehcache.clustered.common.ClusteredStoreValidationException;
+import org.ehcache.clustered.common.internal.ClusteredEhcacheIdentity;
 import org.ehcache.clustered.common.Consistency;
 import org.ehcache.clustered.common.ServerSideConfiguration;
 import org.ehcache.clustered.common.ServerSideConfiguration.Pool;
-import org.ehcache.clustered.common.ServerStoreConfiguration;
-import org.ehcache.clustered.common.ServerStoreConfiguration.PoolAllocation;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse.Failure;
-import org.ehcache.clustered.common.messages.LifeCycleMessageFactory;
-import org.ehcache.clustered.common.messages.ServerStoreMessageFactory;
+import org.ehcache.clustered.common.internal.ServerStoreConfiguration;
+import org.ehcache.clustered.common.PoolAllocation;
+import org.ehcache.clustered.common.internal.exceptions.InvalidServerSideConfigurationException;
+import org.ehcache.clustered.common.internal.exceptions.InvalidServerStoreConfigurationException;
+import org.ehcache.clustered.common.internal.exceptions.InvalidStoreException;
+import org.ehcache.clustered.common.internal.exceptions.InvalidStoreManagerException;
+import org.ehcache.clustered.common.internal.exceptions.LifecycleException;
+import org.ehcache.clustered.common.internal.exceptions.ResourceBusyException;
+import org.ehcache.clustered.common.internal.exceptions.ResourceConfigurationException;
+import org.ehcache.clustered.common.internal.exceptions.ServerMisconfigurationException;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityMessage;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse.Failure;
+import org.ehcache.clustered.common.internal.messages.LifecycleMessage;
+import org.ehcache.clustered.common.internal.messages.LifeCycleMessageFactory;
+import org.ehcache.clustered.common.internal.messages.ServerStoreMessageFactory;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.terracotta.entity.ClientCommunicator;
@@ -34,19 +43,21 @@ import org.terracotta.entity.ServiceConfiguration;
 import org.terracotta.entity.ServiceRegistry;
 import org.terracotta.offheapresource.OffHeapResource;
 import org.terracotta.offheapresource.OffHeapResourceIdentifier;
+import org.terracotta.offheapresource.OffHeapResources;
 import org.terracotta.offheapstore.util.MemoryUnit;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.ehcache.clustered.common.ServerStoreConfiguration.PoolAllocation.Fixed;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse.Type;
+import org.ehcache.clustered.common.PoolAllocation.Dedicated;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse.Type;
 
-import static org.ehcache.clustered.common.messages.EhcacheEntityResponse.Type.FAILURE;
-import static org.ehcache.clustered.common.store.Util.createPayload;
+import static org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse.Type.FAILURE;
+import static org.ehcache.clustered.common.internal.store.Util.createPayload;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
@@ -54,6 +65,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import org.junit.Assert;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -101,7 +113,7 @@ public class EhcacheActiveEntityTest {
    */
   @Test
   public void testConnected() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry(), ENTITY_ID);
 
     ClientDescriptor client = new TestClientDescriptor();
     activeEntity.connected(client);
@@ -115,7 +127,7 @@ public class EhcacheActiveEntityTest {
 
   @Test
   public void testConnectedAgain() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry(), ENTITY_ID);
 
     ClientDescriptor client = new TestClientDescriptor();
     activeEntity.connected(client);
@@ -132,7 +144,7 @@ public class EhcacheActiveEntityTest {
 
   @Test
   public void testConnectedSecond() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry(), ENTITY_ID);
 
     ClientDescriptor client = new TestClientDescriptor();
     activeEntity.connected(client);
@@ -154,7 +166,7 @@ public class EhcacheActiveEntityTest {
    */
   @Test
   public void testDisconnectedNotConnected() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry(), ENTITY_ID);
 
     ClientDescriptor client = new TestClientDescriptor();
     activeEntity.disconnected(client);
@@ -166,7 +178,7 @@ public class EhcacheActiveEntityTest {
    */
   @Test
   public void testDisconnected() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry(), ENTITY_ID);
 
     ClientDescriptor client = new TestClientDescriptor();
     activeEntity.connected(client);
@@ -183,7 +195,7 @@ public class EhcacheActiveEntityTest {
    */
   @Test
   public void testDisconnectedSecond() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry(), ENTITY_ID);
 
     ClientDescriptor client = new TestClientDescriptor();
     activeEntity.connected(client);
@@ -199,12 +211,29 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getInUseStores().isEmpty(), is(true));
   }
 
+  @Test
+  public void testInteractionWithServerWithoutResources() throws Exception {
+    OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
+    EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
+    ClientDescriptor client = new TestClientDescriptor();
+    activeEntity.connected(client);
+
+    String expectedErrorMessage = "Server started without any offheap resources defined.";
+    assertFailure(
+        activeEntity.invoke(client, mock(EhcacheEntityMessage.class)),
+        ServerMisconfigurationException.class, expectedErrorMessage
+    );
+  }
+
   /**
    * Ensures basic shared resource pool configuration.
    */
   @Test
   public void testConfigure() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -232,6 +261,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testNoAttachementFailsToInvokeServerStoreOperation() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -247,10 +279,9 @@ public class EhcacheActiveEntityTest {
                 .build()))
     );
 
-    assertSuccess(
-        activeEntity.invoke(client,
+    assertSuccess(activeEntity.invoke(client,
             MESSAGE_FACTORY.createServerStore("testNoAttachementFailsToInvokeServerStoreOperation", new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build()))
     );
 
@@ -264,13 +295,16 @@ public class EhcacheActiveEntityTest {
 
     assertFailure(
         activeEntity.invoke(client, messageFactory.appendOperation(1L, createPayload(1L))),
-        IllegalStateException.class, "Client not attached"
+        LifecycleException.class, "Client not attached"
     );
   }
 
   @Test
   public void testAppendInvalidationAcksTakenIntoAccount() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client1 = new TestClientDescriptor();
@@ -291,7 +325,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .consistency(Consistency.STRONG)
         .build();
     assertSuccess(
@@ -359,6 +393,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testClearInvalidationAcksTakenIntoAccount() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client1 = new TestClientDescriptor();
@@ -379,7 +416,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .consistency(Consistency.STRONG)
         .build();
     assertSuccess(
@@ -447,6 +484,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testAppendInvalidationDisconnectionOfInvalidatingClientsTakenIntoAccount() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client1 = new TestClientDescriptor();
@@ -467,7 +507,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .consistency(Consistency.STRONG)
         .build();
     assertSuccess(
@@ -531,6 +571,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testClearInvalidationDisconnectionOfInvalidatingClientsTakenIntoAccount() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client1 = new TestClientDescriptor();
@@ -551,7 +594,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .consistency(Consistency.STRONG)
         .build();
     assertSuccess(
@@ -615,6 +658,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testAppendInvalidationDisconnectionOfBlockingClientTakenIntoAccount() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client1 = new TestClientDescriptor();
@@ -635,7 +681,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .consistency(Consistency.STRONG)
         .build();
     assertSuccess(
@@ -689,6 +735,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testClearInvalidationDisconnectionOfBlockingClientTakenIntoAccount() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client1 = new TestClientDescriptor();
@@ -709,7 +758,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .consistency(Consistency.STRONG)
         .build();
     assertSuccess(
@@ -763,6 +812,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testAttachedClientButNotStoreFailsInvokingServerStoreOperation() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -780,7 +832,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
     assertSuccess(
         activeEntity.invoke(client,
@@ -802,13 +854,16 @@ public class EhcacheActiveEntityTest {
 
     assertFailure(
         activeEntity.invoke(client, messageFactory.appendOperation(1L, createPayload(1L))),
-        IllegalStateException.class, "Client not attached on Server Store for cacheId : testAttachedClientButNotStoreFailsInvokingServerStoreOperation"
+        LifecycleException.class, "Client not attached to clustered tier 'testAttachedClientButNotStoreFailsInvokingServerStoreOperation'"
     );
   }
 
   @Test
   public void testWithAttachmentSucceedsInvokingServerStoreOperation() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -826,7 +881,7 @@ public class EhcacheActiveEntityTest {
     );
 
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
     assertSuccess(
         activeEntity.invoke(client,
@@ -859,6 +914,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testConfigureBeforeConnect() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -869,12 +927,15 @@ public class EhcacheActiveEntityTest {
             .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
             .build())),
-        IllegalStateException.class, "not connected");
+        LifecycleException.class, "not connected");
   }
 
   @Test
   public void testConfigureAfterConfigure() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -901,7 +962,7 @@ public class EhcacheActiveEntityTest {
             .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
             .build())),
-        IllegalStateException.class, "already configured");
+        InvalidStoreManagerException.class, "already configured");
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
 
@@ -934,7 +995,7 @@ public class EhcacheActiveEntityTest {
             .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)    // missing on 'server'
             .build())),
-        IllegalArgumentException.class, "Non-existent server side resource");
+        ResourceConfigurationException.class, "Non-existent server side resource");
 
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
 
@@ -967,7 +1028,7 @@ public class EhcacheActiveEntityTest {
             .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
             .build())),
-        IllegalArgumentException.class, "Default server resource");
+        ResourceConfigurationException.class, "Default server resource");
 
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
 
@@ -999,7 +1060,7 @@ public class EhcacheActiveEntityTest {
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
             .sharedPool("tooBig", "serverResource2", 64, MemoryUnit.MEGABYTES)
             .build())),
-        IllegalArgumentException.class, "Insufficient defined resources");
+        ResourceConfigurationException.class, "Insufficient defined resources");
 
     final Set<String> poolIds = activeEntity.getSharedResourcePoolIds();
     assertThat(poolIds, is(Matchers.<String>empty()));
@@ -1021,6 +1082,9 @@ public class EhcacheActiveEntityTest {
         .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
         .build();
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1049,6 +1113,9 @@ public class EhcacheActiveEntityTest {
         .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
         .build();
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1078,6 +1145,9 @@ public class EhcacheActiveEntityTest {
         .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
         .build();
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1095,6 +1165,9 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testValidateExtraResource() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1115,12 +1188,14 @@ public class EhcacheActiveEntityTest {
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
             .sharedPool("tertiary", "serverResource3", 8, MemoryUnit.MEGABYTES)   // extra
             .build())),
-        IllegalArgumentException.class, "Pool names not equal.");
+        InvalidServerSideConfigurationException.class, "Pool names not equal.");
   }
 
   @Test
   public void testValidateNoDefaultResource() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1139,12 +1214,13 @@ public class EhcacheActiveEntityTest {
             .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
             .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
             .build())),
-        IllegalArgumentException.class, "Default resource not aligned");
+        InvalidServerSideConfigurationException.class, "Default resource not aligned");
   }
 
   @Test
-  public void testCreateFixedServerStoreBeforeConfigure() throws Exception {
+  public void testCreateDedicatedServerStoreBeforeConfigure() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1154,14 +1230,16 @@ public class EhcacheActiveEntityTest {
     assertFailure(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())),
-        IllegalStateException.class, "not attached");
+        LifecycleException.class, "not attached");
   }
 
   @Test
-  public void testCreateFixedServerStoreBeforeValidate() throws Exception {
+  public void testCreateDedicatedServerStoreBeforeValidate() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1184,13 +1262,13 @@ public class EhcacheActiveEntityTest {
     assertFailure(activeEntity.invoke(client2,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())),
-        IllegalStateException.class, "not attached");
+        LifecycleException.class, "not attached");
   }
 
   @Test
-  public void testCreateFixedServerStore() throws Exception {
+  public void testCreateDedicatedServerStore() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
     registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
@@ -1209,11 +1287,11 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1223,11 +1301,11 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getStores(), containsInAnyOrder("cacheAlias"));
 
     /*
-     * Ensure the fixed resource pool remains after client disconnect.
+     * Ensure the dedicated resource pool remains after client disconnect.
      */
     activeEntity.disconnected(client);
 
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(activeEntity.getConnectedClients().get(client), is(nullValue()));
     assertThat(activeEntity.getInUseStores().get("cacheAlias"), is(Matchers.<ClientDescriptor>empty()));
@@ -1235,7 +1313,7 @@ public class EhcacheActiveEntityTest {
   }
 
   @Test
-  public void testCreateFixedServerStoreAfterValidate() throws Exception {
+  public void testCreateDedicatedServerStoreAfterValidate() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
     registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
@@ -1264,11 +1342,11 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client2,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1279,8 +1357,10 @@ public class EhcacheActiveEntityTest {
   }
 
   @Test
-  public void testCreateFixedServerStoreExisting() throws Exception {
+  public void testCreateDedicatedServerStoreExisting() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1297,10 +1377,10 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
     activeEntity.disconnected(client);
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
     assertThat(activeEntity.getStores(), containsInAnyOrder("cacheAlias"));
 
     ClientDescriptor client2 = new TestClientDescriptor();
@@ -1312,13 +1392,13 @@ public class EhcacheActiveEntityTest {
     assertFailure(activeEntity.invoke(client2,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())),
-        IllegalStateException.class, "already exists");
+        InvalidStoreException.class, "already exists");
   }
 
   @Test
-  public void testCreateReleaseFixedServerStoreMultiple() throws Exception {
+  public void testCreateReleaseDedicatedServerStoreMultiple() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
     registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
@@ -1337,17 +1417,17 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
 
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("secondCache",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource2", 8, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource2", 8, MemoryUnit.MEGABYTES)
                 .build())));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias", "secondCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias", "secondCache"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L + 8L)));
@@ -1362,18 +1442,18 @@ public class EhcacheActiveEntityTest {
      */
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("cacheAlias")));
 
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias", "secondCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias", "secondCache"));
     assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("secondCache"));
     assertThat(activeEntity.getInUseStores().get("cacheAlias"), is(Matchers.<ClientDescriptor>empty()));
     assertThat(activeEntity.getInUseStores().get("secondCache"), contains(client));
 
     assertFailure(activeEntity.invoke(client,
         MESSAGE_FACTORY.releaseServerStore("cacheAlias")),
-        IllegalStateException.class, "not in use");
+        InvalidStoreException.class, "not in use");
 
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("secondCache")));
 
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias", "secondCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias", "secondCache"));
     assertThat(activeEntity.getConnectedClients().get(client), is(Matchers.<String>empty()));
     assertThat(activeEntity.getInUseStores().get("cacheAlias"), is(Matchers.<ClientDescriptor>empty()));
     assertThat(activeEntity.getInUseStores().get("secondCache"), is(Matchers.<ClientDescriptor>empty()));
@@ -1381,7 +1461,7 @@ public class EhcacheActiveEntityTest {
   }
 
   @Test
-  public void testValidateFixedServerStore() throws Exception {
+  public void testValidateDedicatedServerStore() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
     registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
@@ -1390,7 +1470,7 @@ public class EhcacheActiveEntityTest {
         .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
         .build();
     ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
@@ -1413,7 +1493,7 @@ public class EhcacheActiveEntityTest {
         MESSAGE_FACTORY.validateServerStore("cacheAlias", serverStoreConfiguration)));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1425,7 +1505,7 @@ public class EhcacheActiveEntityTest {
   }
 
   @Test
-  public void testValidateFixedServerStoreBad() throws Exception {
+  public void testValidateDedicatedServerStoreBad() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
     registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
@@ -1444,7 +1524,7 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
 
     ClientDescriptor client2 = new TestClientDescriptor();
@@ -1456,12 +1536,12 @@ public class EhcacheActiveEntityTest {
     assertFailure(activeEntity.invoke(client2,
         MESSAGE_FACTORY.validateServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 8, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 8, MemoryUnit.MEGABYTES)
                 .build())),
-        ClusteredStoreValidationException.class);
+        InvalidServerStoreConfigurationException.class);
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1473,7 +1553,7 @@ public class EhcacheActiveEntityTest {
   }
 
   @Test
-  public void testValidateFixedServerStoreBeforeCreate() throws Exception {
+  public void testValidateDedicatedServerStoreBeforeCreate() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
     registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
@@ -1499,12 +1579,12 @@ public class EhcacheActiveEntityTest {
     assertFailure(activeEntity.invoke(client2,
         MESSAGE_FACTORY.validateServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())),
-        IllegalStateException.class, "does not exist");
+        InvalidStoreException.class, "does not exist");
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1540,7 +1620,7 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getStores(), containsInAnyOrder("cacheAlias"));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1584,7 +1664,7 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getStores(), containsInAnyOrder("cacheAlias"));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
 
     activeEntity.disconnected(client);
 
@@ -1600,7 +1680,7 @@ public class EhcacheActiveEntityTest {
             new ServerStoreConfigBuilder()
                 .shared("primary")
                 .build())),
-        IllegalStateException.class, "already exists");
+        InvalidStoreException.class, "already exists");
   }
 
   @Test
@@ -1627,7 +1707,7 @@ public class EhcacheActiveEntityTest {
         MESSAGE_FACTORY.createServerStore("cacheAlias", sharedStoreConfig)));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1652,18 +1732,18 @@ public class EhcacheActiveEntityTest {
   }
 
   @Test
-  public void testValidateServerStore_FixedStoresDifferentSizes() throws Exception {
+  public void testValidateServerStore_DedicatedStoresDifferentSizes() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 4, MemoryUnit.MEGABYTES);
 
     ServerSideConfiguration serverSideConfiguration = new ServerSideConfigBuilder().build();
 
-    ServerStoreConfiguration fixedStoreConfig1 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig1 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
-    ServerStoreConfiguration fixedStoreConfig2 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 2, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig2 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 2, MemoryUnit.MEGABYTES)
         .build();
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
@@ -1673,7 +1753,7 @@ public class EhcacheActiveEntityTest {
 
     assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.configureStoreManager(serverSideConfiguration)));
 
-    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", fixedStoreConfig1)));
+    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", dedicatedStoreConfig1)));
 
     ClientDescriptor client2 = new TestClientDescriptor();
     activeEntity.connected(client2);
@@ -1684,32 +1764,31 @@ public class EhcacheActiveEntityTest {
 
     String expectedMessageContent = "Existing ServerStore configuration is not compatible with the desired configuration: " +
                                     "\n\t" +
-                                    "resourcePoolFixedSize existing: " +
-                                    ((PoolAllocation.Fixed)fixedStoreConfig1.getPoolAllocation()).getSize() +
+                                    "resourcePoolDedicatedSize existing: " +
+                                    ((PoolAllocation.Dedicated)dedicatedStoreConfig1.getPoolAllocation()).getSize() +
                                     ", desired: " +
-                                    ((PoolAllocation.Fixed)fixedStoreConfig2.getPoolAllocation()).getSize();
+                                    ((PoolAllocation.Dedicated)dedicatedStoreConfig2.getPoolAllocation()).getSize();
 
-    assertFailure(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAlias", fixedStoreConfig2)),ClusteredStoreValidationException.class,expectedMessageContent);
-
+    assertFailure(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAlias", dedicatedStoreConfig2)),InvalidServerStoreConfigurationException.class,expectedMessageContent);
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
   }
 
   @Test
-  public void testValidateServerStore_FixedStoresSameSizes() throws Exception {
+  public void testValidateServerStore_DedicatedStoresSameSizes() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 4, MemoryUnit.MEGABYTES);
 
     ServerSideConfiguration serverSideConfiguration = new ServerSideConfigBuilder().build();
 
-    ServerStoreConfiguration fixedStoreConfig1 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig1 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
-    ServerStoreConfiguration fixedStoreConfig2 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig2 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
@@ -1719,7 +1798,7 @@ public class EhcacheActiveEntityTest {
 
     assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.configureStoreManager(serverSideConfiguration)));
 
-    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", fixedStoreConfig1)));
+    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", dedicatedStoreConfig1)));
 
     ClientDescriptor client2 = new TestClientDescriptor();
     activeEntity.connected(client2);
@@ -1727,27 +1806,27 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getConnectedClients().keySet(), containsInAnyOrder(client1, client2));
 
     assertSuccess(activeEntity.invoke(client2, MESSAGE_FACTORY.validateStoreManager(serverSideConfiguration)));
-    assertSuccess(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAlias", fixedStoreConfig2)));
+    assertSuccess(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAlias", dedicatedStoreConfig2)));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
   }
 
   @Test
-  public void testValidateServerStore_FixedStoreResourceNamesDifferent() throws Exception {
+  public void testValidateServerStore_DedicatedStoreResourceNamesDifferent() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 4, MemoryUnit.MEGABYTES);
 
     ServerSideConfiguration serverSideConfiguration = new ServerSideConfigBuilder().build();
 
-    ServerStoreConfiguration fixedStoreConfig1 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig1 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
-    ServerStoreConfiguration fixedStoreConfig2 = new ServerStoreConfigBuilder()
-        .fixed("serverResource2", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig2 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource2", 4, MemoryUnit.MEGABYTES)
         .build();
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
@@ -1757,7 +1836,7 @@ public class EhcacheActiveEntityTest {
 
     assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.configureStoreManager(serverSideConfiguration)));
 
-    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", fixedStoreConfig1)));
+    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", dedicatedStoreConfig1)));
 
     ClientDescriptor client2 = new TestClientDescriptor();
     activeEntity.connected(client2);
@@ -1767,32 +1846,31 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client2, MESSAGE_FACTORY.validateStoreManager(serverSideConfiguration)));
     String expectedMessageContent = "Existing ServerStore configuration is not compatible with the desired configuration: " +
                                     "\n\t" +
-                                    "resourcePoolFixedResourceName existing: " +
-                                    ((Fixed)fixedStoreConfig1.getPoolAllocation()).getResourceName() +
+                                    "resourcePoolDedicatedResourceName existing: " +
+                                    ((Dedicated)dedicatedStoreConfig1.getPoolAllocation()).getResourceName() +
                                     ", desired: " +
-                                    ((Fixed)fixedStoreConfig2.getPoolAllocation()).getResourceName();
+                                    ((Dedicated)dedicatedStoreConfig2.getPoolAllocation()).getResourceName();
 
-    assertFailure(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAlias", fixedStoreConfig2)),ClusteredStoreValidationException.class,expectedMessageContent);
-
+    assertFailure(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAlias", dedicatedStoreConfig2)),InvalidServerStoreConfigurationException.class,expectedMessageContent);
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
   }
 
   @Test
-  public void testValidateServerStore_FixedCacheNameDifferent() throws Exception {
+  public void testValidateServerStore_DedicatedCacheNameDifferent() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
     registry.addResource("serverResource1", 4, MemoryUnit.MEGABYTES);
 
     ServerSideConfiguration serverSideConfiguration = new ServerSideConfigBuilder().build();
 
-    ServerStoreConfiguration fixedStoreConfig1 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig1 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
-    ServerStoreConfiguration fixedStoreConfig2 = new ServerStoreConfigBuilder()
-        .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+    ServerStoreConfiguration dedicatedStoreConfig2 = new ServerStoreConfigBuilder()
+        .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
         .build();
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
@@ -1802,7 +1880,7 @@ public class EhcacheActiveEntityTest {
 
     assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.configureStoreManager(serverSideConfiguration)));
 
-    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", fixedStoreConfig1)));
+    assertSuccess(activeEntity.invoke(client1, MESSAGE_FACTORY.createServerStore("cacheAlias", dedicatedStoreConfig1)));
 
     ClientDescriptor client2 = new TestClientDescriptor();
     activeEntity.connected(client2);
@@ -1810,10 +1888,10 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getConnectedClients().keySet(), containsInAnyOrder(client1, client2));
 
     assertSuccess(activeEntity.invoke(client2, MESSAGE_FACTORY.validateStoreManager(serverSideConfiguration)));
-    assertFailure(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAliasBad", fixedStoreConfig2)),IllegalStateException.class,"Store 'cacheAliasBad' does not exist");
+    assertFailure(activeEntity.invoke(client2, MESSAGE_FACTORY.validateServerStore("cacheAliasBad", dedicatedStoreConfig2)),InvalidStoreException.class,"Clustered tier 'cacheAliasBad' does not exist");
 
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("cacheAlias"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
   }
@@ -1844,7 +1922,7 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getStores(), containsInAnyOrder("cacheAlias"));
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
 
     activeEntity.disconnected(client);
 
@@ -1859,7 +1937,7 @@ public class EhcacheActiveEntityTest {
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
                 .shared("secondary")
-                .build())),IllegalStateException.class,"Store 'cacheAlias' already exists");
+                .build())),InvalidStoreException.class,"Clustered tier 'cacheAlias' already exists");
   }
 
 
@@ -1897,10 +1975,10 @@ public class EhcacheActiveEntityTest {
             new ServerStoreConfigBuilder()
                 .shared("secondary")
                 .build())),
-        ClusteredStoreValidationException.class);
+        InvalidServerStoreConfigurationException.class);
 
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -1914,6 +1992,8 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testReleaseServerStoreBeforeAttach() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1928,12 +2008,14 @@ public class EhcacheActiveEntityTest {
 
     assertFailure(activeEntity.invoke(client,
         MESSAGE_FACTORY.releaseServerStore("cacheAlias")),
-        IllegalStateException.class, "does not exist");
+        InvalidStoreException.class, "does not exist");
   }
 
   @Test
   public void testReleaseServerStoreAfterRelease() throws Exception {
     final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1949,7 +2031,7 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("cacheAlias",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
     assertThat(activeEntity.getStores(), containsInAnyOrder("cacheAlias"));
     assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("cacheAlias"));
@@ -1963,12 +2045,14 @@ public class EhcacheActiveEntityTest {
 
     assertFailure(activeEntity.invoke(client,
         MESSAGE_FACTORY.releaseServerStore("cacheAlias")),
-        IllegalStateException.class, "not in use by client");
+        InvalidStoreException.class, "not in use by client");
   }
 
   @Test
   public void testDestroyServerStore() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -1982,49 +2066,49 @@ public class EhcacheActiveEntityTest {
             .build())));
 
     assertSuccess(activeEntity.invoke(client,
-        MESSAGE_FACTORY.createServerStore("fixedCache",
+        MESSAGE_FACTORY.createServerStore("dedicatedCache",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getInUseStores().get("fixedCache"), containsInAnyOrder(client));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getInUseStores().get("dedicatedCache"), containsInAnyOrder(client));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
 
-    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("fixedCache")));
+    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("dedicatedCache")));
 
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getInUseStores().get("fixedCache"), is(Matchers.<ClientDescriptor>empty()));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getInUseStores().get("dedicatedCache"), is(Matchers.<ClientDescriptor>empty()));
 
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("sharedCache",
             new ServerStoreConfigBuilder()
                 .shared("secondary")
                 .build())));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("fixedCache", "sharedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("dedicatedCache", "sharedCache"));
 
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("sharedCache")));
 
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getInUseStores().get("fixedCache"), is(Matchers.<ClientDescriptor>empty()));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getInUseStores().get("dedicatedCache"), is(Matchers.<ClientDescriptor>empty()));
 
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.destroyServerStore("sharedCache")));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
 
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("fixedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("dedicatedCache"));
 
-    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.destroyServerStore("fixedCache")));
+    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.destroyServerStore("dedicatedCache")));
 
     assertThat(activeEntity.getStores(), is(Matchers.<String>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
     assertThat(activeEntity.getInUseStores().keySet(), is(Matchers.<String>empty()));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L)));
@@ -2033,13 +2117,15 @@ public class EhcacheActiveEntityTest {
 
   /**
    * Tests the destroy server store operation <b>before</b> the use of either a
-   * {@link org.ehcache.clustered.common.messages.LifecycleMessage.CreateServerStore CreateServerStore}
-   * {@link org.ehcache.clustered.common.messages.LifecycleMessage.ValidateServerStore ValidateServerStore}
+   * {@link LifecycleMessage.CreateServerStore CreateServerStore}
+   * {@link LifecycleMessage.ValidateServerStore ValidateServerStore}
    * operation.
    */
   @Test
   public void testDestroyServerStoreBeforeAttach() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -2054,12 +2140,15 @@ public class EhcacheActiveEntityTest {
 
     assertFailure(activeEntity.invoke(client,
         MESSAGE_FACTORY.destroyServerStore("cacheAlias")),
-        IllegalStateException.class, "does not exist");
+        InvalidStoreException.class, "does not exist");
   }
 
   @Test
   public void testDestroyServerStoreInUse() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
+
     ServerSideConfiguration serverSideConfiguration = new ServerSideConfigBuilder()
         .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
         .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
@@ -2073,11 +2162,11 @@ public class EhcacheActiveEntityTest {
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.configureStoreManager(serverSideConfiguration)));
 
     assertSuccess(activeEntity.invoke(client,
-        MESSAGE_FACTORY.createServerStore("fixedCache",
+        MESSAGE_FACTORY.createServerStore("dedicatedCache",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -2087,9 +2176,9 @@ public class EhcacheActiveEntityTest {
             new ServerStoreConfigBuilder()
                 .shared("secondary")
                 .build())));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("fixedCache", "sharedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("dedicatedCache", "sharedCache"));
 
     ClientDescriptor client2 = new TestClientDescriptor();
     activeEntity.connected(client2);
@@ -2098,15 +2187,15 @@ public class EhcacheActiveEntityTest {
 
     assertFailure(activeEntity.invoke(client2,
         MESSAGE_FACTORY.destroyServerStore("sharedCache")),
-        IllegalStateException.class, "in use");
+        ResourceBusyException.class, "in use");
 
     assertFailure(activeEntity.invoke(client2,
-        MESSAGE_FACTORY.destroyServerStore("fixedCache")),
-        IllegalStateException.class, "in use");
+        MESSAGE_FACTORY.destroyServerStore("dedicatedCache")),
+        ResourceBusyException.class, "in use");
 
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getInUseStores().get("fixedCache"), contains(client));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getInUseStores().get("dedicatedCache"), contains(client));
     assertThat(activeEntity.getInUseStores().get("sharedCache"), contains(client));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
@@ -2138,63 +2227,65 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getStores(), is(Matchers.<String>empty()));
 
     assertSuccess(activeEntity.invoke(client,
-        MESSAGE_FACTORY.createServerStore("fixedCache",
+        MESSAGE_FACTORY.createServerStore("dedicatedCache",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
-    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("fixedCache"));
+    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("dedicatedCache"));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache"));
 
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("sharedCache",
             new ServerStoreConfigBuilder()
                 .shared("primary")
                 .build())));
-    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("fixedCache", "sharedCache"));
+    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("dedicatedCache", "sharedCache"));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache"));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
 
     assertSuccess(activeEntity.invoke(client,
         MESSAGE_FACTORY.createServerStore("primary",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource2", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource2", 4, MemoryUnit.MEGABYTES)
                 .build())));
-    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("fixedCache", "sharedCache", "primary"));
+    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("dedicatedCache", "sharedCache", "primary"));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache", "primary"));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache", "primary"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache", "primary"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache", "primary"));
 
-    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("fixedCache")));
+    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("dedicatedCache")));
     assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("sharedCache", "primary"));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache", "primary"));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache", "primary"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache", "primary"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache", "primary"));
 
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("primary")));
     assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("sharedCache"));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache", "primary"));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache", "primary"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache", "primary"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache", "primary"));
 
     assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.releaseServerStore("sharedCache")));
     assertThat(activeEntity.getConnectedClients().get(client), is(Matchers.<String>empty()));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
-    assertThat(activeEntity.getFixedResourcePoolIds(), containsInAnyOrder("fixedCache", "primary"));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache", "primary"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), containsInAnyOrder("dedicatedCache", "primary"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache", "primary"));
   }
 
   @Test
   public void testDestroyEmpty() throws Exception {
-    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(mock(ServiceRegistry.class), ENTITY_ID);
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(new OffHeapIdentifierRegistry() , ENTITY_ID);
     activeEntity.destroy();
   }
 
   @Test
   public void testDestroyWithStores() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
 
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor client = new TestClientDescriptor();
@@ -2208,11 +2299,11 @@ public class EhcacheActiveEntityTest {
             .build())));
 
     assertSuccess(activeEntity.invoke(client,
-        MESSAGE_FACTORY.createServerStore("fixedCache",
+        MESSAGE_FACTORY.createServerStore("dedicatedCache",
             new ServerStoreConfigBuilder()
-                .fixed("serverResource1", 4, MemoryUnit.MEGABYTES)
+                .dedicated("serverResource1", 4, MemoryUnit.MEGABYTES)
                 .build())));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache"));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(4L + 4L)));
     assertThat(registry.getResource("serverResource2").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(8L)));
@@ -2222,18 +2313,18 @@ public class EhcacheActiveEntityTest {
             new ServerStoreConfigBuilder()
                 .shared("secondary")
                 .build())));
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("fixedCache", "sharedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getConnectedClients().get(client), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("dedicatedCache", "sharedCache"));
 
     activeEntity.disconnected(client);
 
-    assertThat(activeEntity.getStores(), containsInAnyOrder("fixedCache", "sharedCache"));
+    assertThat(activeEntity.getStores(), containsInAnyOrder("dedicatedCache", "sharedCache"));
     assertThat(activeEntity.getConnectedClients().keySet(), is(Matchers.<ClientDescriptor>empty()));
-    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("fixedCache", "sharedCache"));
-    assertThat(activeEntity.getInUseStores().get("fixedCache"), is(Matchers.<ClientDescriptor>empty()));
+    assertThat(activeEntity.getInUseStores().keySet(), containsInAnyOrder("dedicatedCache", "sharedCache"));
+    assertThat(activeEntity.getInUseStores().get("dedicatedCache"), is(Matchers.<ClientDescriptor>empty()));
     assertThat(activeEntity.getInUseStores().get("sharedCache"), is(Matchers.<ClientDescriptor>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), contains("fixedCache"));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), contains("dedicatedCache"));
     assertThat(activeEntity.getSharedResourcePoolIds(), containsInAnyOrder("primary", "secondary"));
 
     ClientDescriptor client2 = new TestClientDescriptor();
@@ -2245,7 +2336,7 @@ public class EhcacheActiveEntityTest {
     assertThat(activeEntity.getStores(), is(Matchers.<String>empty()));
     assertThat(activeEntity.getConnectedClients().get(client2), is(Matchers.<String>empty()));
     assertThat(activeEntity.getInUseStores().keySet(), is(Matchers.<String>empty()));
-    assertThat(activeEntity.getFixedResourcePoolIds(), is(Matchers.<String>empty()));
+    assertThat(activeEntity.getDedicatedResourcePoolIds(), is(Matchers.<String>empty()));
     assertThat(activeEntity.getSharedResourcePoolIds(), is(Matchers.<String>empty()));
 
     assertThat(registry.getResource("serverResource1").getUsed(), is(MemoryUnit.MEGABYTES.toBytes(0L)));
@@ -2267,6 +2358,9 @@ public class EhcacheActiveEntityTest {
         .build();
 
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("primary-server-resource", 16, MemoryUnit.MEGABYTES);
+    registry.addResource("secondary-server-resource", 16, MemoryUnit.MEGABYTES);
+
     final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
     ClientDescriptor configurer = new TestClientDescriptor();
     activeEntity.connected(configurer);
@@ -2281,6 +2375,10 @@ public class EhcacheActiveEntityTest {
   @Test
   public void testValidateSharedPoolNamesDifferent() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 64, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
+
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
 
     ClientDescriptor configurer = new TestClientDescriptor();
@@ -2299,12 +2397,16 @@ public class EhcacheActiveEntityTest {
         .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
         .sharedPool("ternary", "serverResource2", 8, MemoryUnit.MEGABYTES)
         .build();
-    assertFailure(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(validate)), IllegalArgumentException.class, "Pool names not equal.");
+    assertFailure(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(validate)), InvalidServerSideConfigurationException.class, "Pool names not equal.");
   }
 
   @Test
   public void testValidateDefaultResourceNameDifferent() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
+
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
 
     ClientDescriptor configurer = new TestClientDescriptor();
@@ -2323,12 +2425,16 @@ public class EhcacheActiveEntityTest {
         .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
         .sharedPool("secondary", "serverResource2", 8, MemoryUnit.MEGABYTES)
         .build();
-    assertFailure(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(validate)), IllegalArgumentException.class, "Default resource not aligned.");
+    assertFailure(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(validate)), InvalidServerSideConfigurationException.class, "Default resource not aligned.");
   }
 
   @Test
   public void testValidateClientSharedPoolSizeTooBig() throws Exception {
-    OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(64, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 32, MemoryUnit.MEGABYTES);
+
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
 
     ClientDescriptor configurer = new TestClientDescriptor();
@@ -2347,12 +2453,16 @@ public class EhcacheActiveEntityTest {
         .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
         .sharedPool("secondary", "serverResource2", 36, MemoryUnit.MEGABYTES)
         .build();
-    assertFailure(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(validate)),IllegalArgumentException.class, "Pool 'secondary' not equal.");
+    assertFailure(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(validate)),InvalidServerSideConfigurationException.class, "Pool 'secondary' not equal.");
   }
 
   @Test
   public void testValidateSecondClientInheritsFirstClientConfig() throws Exception {
     OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource1", 8, MemoryUnit.MEGABYTES);
+    registry.addResource("serverResource2", 8, MemoryUnit.MEGABYTES);
+
     EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
 
     ClientDescriptor configurer = new TestClientDescriptor();
@@ -2367,6 +2477,56 @@ public class EhcacheActiveEntityTest {
     ClientDescriptor validator = new TestClientDescriptor();
     activeEntity.connected(validator);
     assertSuccess(activeEntity.invoke(validator, MESSAGE_FACTORY.validateStoreManager(null)));
+  }
+
+  @Test
+  public void testValidateNonExistentSharedPool() throws Exception {
+    OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry(32, MemoryUnit.MEGABYTES);
+    registry.addResource("defaultServerResource", 8, MemoryUnit.MEGABYTES);
+
+    EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
+
+    ClientDescriptor configurer = new TestClientDescriptor();
+    activeEntity.connected(configurer);
+    ServerSideConfiguration configure = new ServerSideConfigBuilder().build();
+    assertSuccess(activeEntity.invoke(configurer,MESSAGE_FACTORY.configureStoreManager(configure)));
+
+    ServerStoreConfiguration sharedStoreConfig = new ServerStoreConfigBuilder()
+        .shared("non-existent-pool")
+        .build();
+
+    assertFailure(
+        activeEntity.invoke(configurer, MESSAGE_FACTORY.createServerStore("sharedCache", sharedStoreConfig)),
+        ResourceConfigurationException.class,
+        "Shared pool named 'non-existent-pool' undefined."
+    );
+  }
+
+  public void testCreateServerStoreWithUnknownPool() throws Exception {
+
+    final OffHeapIdentifierRegistry registry = new OffHeapIdentifierRegistry();
+    registry.addResource("serverResource1", 32, MemoryUnit.MEGABYTES);
+    ServerSideConfiguration serverSideConfiguration = new ServerSideConfigBuilder()
+        .sharedPool("primary", "serverResource1", 4, MemoryUnit.MEGABYTES)
+        .build();
+    ServerStoreConfiguration serverStoreConfiguration = new ServerStoreConfigBuilder()
+        .unknown()
+        .build();
+
+    final EhcacheActiveEntity activeEntity = new EhcacheActiveEntity(registry, ENTITY_ID);
+    ClientDescriptor client = new TestClientDescriptor();
+    activeEntity.connected(client);
+    assertThat(activeEntity.getConnectedClients().keySet(), contains(client));
+
+    assertSuccess(activeEntity.invoke(client, MESSAGE_FACTORY.configureStoreManager(serverSideConfiguration)));
+
+    try {
+      assertSuccess(activeEntity.invoke(client,
+          MESSAGE_FACTORY.createServerStore("cacheAlias", serverStoreConfiguration)));
+      fail("Expecting IllegalStateException");
+    } catch(IllegalStateException e) {
+      Assert.assertThat(e.getMessage(), is("Server Store can't be created with an Unknown resource pool"));
+    }
   }
 
   private void assertSuccess(EhcacheEntityResponse response) throws Exception {
@@ -2433,13 +2593,18 @@ public class EhcacheActiveEntityTest {
       return this;
     }
 
-    ServerStoreConfigBuilder fixed(String resourceName, int size, MemoryUnit unit) {
-      this.poolAllocation = new PoolAllocation.Fixed(resourceName, unit.toBytes(size));
+    ServerStoreConfigBuilder dedicated(String resourceName, int size, MemoryUnit unit) {
+      this.poolAllocation = new PoolAllocation.Dedicated(resourceName, unit.toBytes(size));
       return this;
     }
 
     ServerStoreConfigBuilder shared(String resourcePoolName) {
       this.poolAllocation = new PoolAllocation.Shared(resourcePoolName);
+      return this;
+    }
+
+    ServerStoreConfigBuilder unknown() {
+      this.poolAllocation = new PoolAllocation.Unknown();
       return this;
     }
 
@@ -2540,14 +2705,21 @@ public class EhcacheActiveEntityTest {
     public <T> T getService(ServiceConfiguration<T> serviceConfiguration) {
       if (serviceConfiguration instanceof OffHeapResourceIdentifier) {
         final OffHeapResourceIdentifier resourceIdentifier = (OffHeapResourceIdentifier) serviceConfiguration;
-        TestOffHeapResource offHeapResource = this.pools.get(resourceIdentifier);
-        if (offHeapResource == null && offHeapSize != 0) {
-          offHeapResource = new TestOffHeapResource(offHeapSize);
-          this.pools.put(resourceIdentifier, offHeapResource);
-        }
-        return (T) offHeapResource;    // unchecked
+        return (T) this.pools.get(resourceIdentifier);
       } else if (serviceConfiguration.getServiceType().equals(ClientCommunicator.class)) {
         return (T) mock(ClientCommunicator.class);
+      } else if(serviceConfiguration.getServiceType().equals(OffHeapResources.class)) {
+        return (T) new OffHeapResources() {
+          @Override
+          public Set<String> getAllIdentifiers() {
+            Set<String> names = new HashSet<String>();
+            for (OffHeapResourceIdentifier identifier: pools.keySet()) {
+              names.add(identifier.getName());
+            }
+
+            return Collections.unmodifiableSet(names);
+          }
+        };
       }
 
       throw new UnsupportedOperationException("Registry.getService does not support " + serviceConfiguration.getClass().getName());

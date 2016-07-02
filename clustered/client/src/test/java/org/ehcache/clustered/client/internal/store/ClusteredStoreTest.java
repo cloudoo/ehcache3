@@ -25,8 +25,8 @@ import org.ehcache.clustered.client.internal.UnitTestConnectionService;
 import org.ehcache.clustered.client.internal.store.operations.ChainResolver;
 import org.ehcache.clustered.client.internal.store.operations.codecs.OperationsCodec;
 import org.ehcache.clustered.common.ServerSideConfiguration;
-import org.ehcache.clustered.common.ServerStoreConfiguration;
-import org.ehcache.clustered.common.messages.ServerStoreMessageFactory;
+import org.ehcache.clustered.common.internal.ServerStoreConfiguration;
+import org.ehcache.clustered.common.internal.messages.ServerStoreMessageFactory;
 import org.ehcache.config.units.MemoryUnit;
 import org.ehcache.core.Ehcache;
 import org.ehcache.core.spi.function.Function;
@@ -82,7 +82,7 @@ public class ClusteredStoreTest {
     entityFactory.create("TestCacheManager", serverConfig);
 
     EhcacheClientEntity clientEntity = entityFactory.retrieve("TestCacheManager", serverConfig);
-    ClusteredResourcePool resourcePool = ClusteredResourcePoolBuilder.fixed(4, MemoryUnit.MB);
+    ClusteredResourcePool resourcePool = ClusteredResourcePoolBuilder.clusteredDedicated(4, MemoryUnit.MB);
     ServerStoreConfiguration serverStoreConfiguration =
         new ServerStoreConfiguration(resourcePool.getPoolAllocation(),
             Long.class.getName(), String.class.getName(),

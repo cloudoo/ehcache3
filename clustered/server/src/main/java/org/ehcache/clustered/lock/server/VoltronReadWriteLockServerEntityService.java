@@ -17,9 +17,9 @@ package org.ehcache.clustered.lock.server;
 
 import java.util.Collections;
 import java.util.Set;
-import org.ehcache.clustered.lock.common.LockMessaging;
-import org.ehcache.clustered.lock.common.LockMessaging.LockOperation;
-import org.ehcache.clustered.lock.common.LockMessaging.LockTransition;
+import org.ehcache.clustered.common.internal.lock.LockMessaging;
+import org.ehcache.clustered.common.internal.lock.LockMessaging.LockOperation;
+import org.ehcache.clustered.common.internal.lock.LockMessaging.LockTransition;
 
 import org.terracotta.entity.ActiveServerEntity;
 import org.terracotta.entity.ClientCommunicator;
@@ -44,7 +44,7 @@ public class VoltronReadWriteLockServerEntityService implements ServerEntityServ
 
   @Override
   public boolean handlesEntityType(String typeName) {
-    return "org.ehcache.clustered.lock.client.VoltronReadWriteLockClient".equals(typeName);
+    return "org.ehcache.clustered.client.internal.lock.VoltronReadWriteLockClient".equals(typeName);
   }
 
   @Override

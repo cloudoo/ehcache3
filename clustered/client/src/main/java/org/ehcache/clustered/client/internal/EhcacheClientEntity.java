@@ -16,16 +16,21 @@
 
 package org.ehcache.clustered.client.internal;
 
-import org.ehcache.CachePersistenceException;
-import org.ehcache.clustered.common.ClusteredEhcacheIdentity;
-import org.ehcache.clustered.common.ClusteredStoreValidationException;
+import org.ehcache.clustered.client.internal.service.ClusteredTierDestructionException;
+import org.ehcache.clustered.client.internal.service.ClusteredTierManagerConfigurationException;
+import org.ehcache.clustered.client.internal.service.ClusteredTierCreationException;
+import org.ehcache.clustered.client.internal.service.ClusteredTierManagerValidationException;
+import org.ehcache.clustered.client.internal.service.ClusteredTierReleaseException;
+import org.ehcache.clustered.client.internal.service.ClusteredTierValidationException;
+import org.ehcache.clustered.common.internal.ClusteredEhcacheIdentity;
 import org.ehcache.clustered.common.ServerSideConfiguration;
-import org.ehcache.clustered.common.ServerStoreConfiguration;
-import org.ehcache.clustered.common.messages.EhcacheEntityMessage;
-import org.ehcache.clustered.common.messages.LifeCycleMessageFactory;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse.Failure;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse.Type;
+import org.ehcache.clustered.common.internal.ServerStoreConfiguration;
+import org.ehcache.clustered.common.internal.exceptions.ClusteredEhcacheException;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityMessage;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse.Failure;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse.Type;
+import org.ehcache.clustered.common.internal.messages.LifeCycleMessageFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.terracotta.connection.entity.Entity;
@@ -135,51 +140,51 @@ public class EhcacheClientEntity implements Entity {
     endpoint.close();
   }
 
-  public void validate(ServerSideConfiguration config) throws IllegalArgumentException {
+  public void validate(ServerSideConfiguration config) throws ClusteredTierManagerValidationException {
     try {
       invokeInternal(messageFactory.validateStoreManager(config), false);
     } catch (Exception e) {
-      throw convert(e, IllegalArgumentException.class, ILLEGAL_ARGUMENT_EXCEPTION_CTOR);
+      throw new ClusteredTierManagerValidationException("Error validating server clustered tier manager", e);
     }
   }
 
-  public void configure(ServerSideConfiguration config) throws IllegalStateException {
+  public void configure(ServerSideConfiguration config) throws ClusteredTierManagerConfigurationException {
     try {
-      invokeInternal(messageFactory.configureStoreManager(config), false);
+      invokeInternal(messageFactory.configureStoreManager(config), true);
     } catch (Exception e) {
-      throw convert(e, IllegalStateException.class, ILLEGAL_STATE_EXCEPTION_CTOR);
+      throw new ClusteredTierManagerConfigurationException("Error configuring clustered tier manager", e);
     }
   }
 
-  public void createCache(String name, ServerStoreConfiguration serverStoreConfiguration) throws CachePersistenceException {
+  public void createCache(String name, ServerStoreConfiguration serverStoreConfiguration) throws ClusteredTierCreationException {
     try {
-      invokeInternal(messageFactory.createServerStore(name, serverStoreConfiguration), false);
+      invokeInternal(messageFactory.createServerStore(name, serverStoreConfiguration), true);
     } catch (Exception e) {
-      throw convert(e, CachePersistenceException.class, CACHE_PERSISTENCE_EXCEPTION_CTOR);
+      throw new ClusteredTierCreationException("Error creating clustered tier '" + name + "'", e);
     }
   }
 
-  public void validateCache(String name, ServerStoreConfiguration serverStoreConfiguration) throws ClusteredStoreValidationException {
+  public void validateCache(String name, ServerStoreConfiguration serverStoreConfiguration) throws ClusteredTierValidationException {
     try {
       invokeInternal(messageFactory.validateServerStore(name , serverStoreConfiguration), false);
     } catch (Exception e) {
-      throw convert(e, ClusteredStoreValidationException.class, CLUSTERED_STORE_VALIDATION_EXCEPTION_CTOR);
+      throw new ClusteredTierValidationException("Error validating clustered tier '" + name + "'", e);
     }
   }
 
-  public void releaseCache(String name) throws CachePersistenceException {
+  public void releaseCache(String name) throws ClusteredTierReleaseException {
     try {
       invokeInternal(messageFactory.releaseServerStore(name), false);
     } catch (Exception e) {
-      throw convert(e, CachePersistenceException.class, CACHE_PERSISTENCE_EXCEPTION_CTOR);
+      throw new ClusteredTierReleaseException("Error releasing clustered tier '" + name + "'", e);
     }
   }
 
-  public void destroyCache(String name) throws CachePersistenceException {
+  public void destroyCache(String name) throws ClusteredTierDestructionException {
     try {
-      invokeInternal(messageFactory.destroyServerStore(name), false);
+      invokeInternal(messageFactory.destroyServerStore(name), true);
     } catch (Exception e) {
-      throw convert(e, CachePersistenceException.class, CACHE_PERSISTENCE_EXCEPTION_CTOR);
+      throw new ClusteredTierDestructionException("Error destroying clustered tier '" + name + "'", e);
     }
   }
 
@@ -188,55 +193,52 @@ public class EhcacheClientEntity implements Entity {
    * awaits a response.
    *
    * @param message the {@code EhcacheEntityMessage} to send
-   * @param waitUntilReplicated if {@code true}, indicates that the message should be replicated to
-   *                            passive servers before the response for {@code message} is returned
+   * @param replicate if {@code true}, indicates that the message should be replicated to passive servers
    *
    * @return an {@code EhcacheEntityResponse} holding a successful response from the server for {@code message}
    *
-   * @throws EhcacheEntityOperationException thrown to reflect a server-side operation fault except for
-   *          {@code IllegalArgumentException} and {@code IllegalStateException}
-   * @throws IllegalArgumentException thrown to reflect an {@code IllegalArgumentException} from a server-side
-   *          operation or if thrown from a message system support method
-   * @throws IllegalStateException thrown to reflect an {@code IllegalStateException} from a server-side
-   *          operation or if thrown from a message system support method
-   * @throws RuntimeException thrown when a message system support method throws a {@code RuntimeException}
-   *          or a checked exception
+   * @throws ClusteredEhcacheException thrown to reflect a server-side operation fault
    */
-  public EhcacheEntityResponse invoke(EhcacheEntityMessage message, boolean waitUntilReplicated)
-      throws EhcacheEntityOperationException, IllegalArgumentException, IllegalStateException {
+  public EhcacheEntityResponse invoke(EhcacheEntityMessage message, boolean replicate) throws ClusteredEhcacheException {
+      return invokeInternal(message, replicate);
+  }
+
+  private EhcacheEntityResponse invokeInternal(EhcacheEntityMessage message, boolean replicate)
+      throws ClusteredEhcacheException {
+
     try {
-      return invokeInternal(message, waitUntilReplicated);
-    } catch (Exception e) {
-      throw convert(e, EhcacheEntityOperationException.class, EHCACHE_ENTITY_OPERATION_EXCEPTION_CTOR);
+      EhcacheEntityResponse response = waitFor(invokeAsync(message, replicate));
+      if (Type.FAILURE.equals(response.getType())) {
+        Exception cause = ((Failure)response).getCause();
+        if (cause instanceof ClusteredEhcacheException) {
+          throw (ClusteredEhcacheException) cause;
+        }
+        throw new RuntimeException(message + " error: " + cause.toString(), cause);
+      } else {
+        return response;
+      }
+    } catch (EntityException e) {
+      throw new RuntimeException(message + " error: " + e.toString(), e);
+    } catch (MessageCodecException e) {
+      throw new RuntimeException(message + " error: " + e.toString(), e);
     }
   }
 
-  private EhcacheEntityResponse invokeInternal(EhcacheEntityMessage message, boolean waitUntilReplicated)
-      throws CachePersistenceException, MessageCodecException, EntityException {
-
-    InvokeFuture<EhcacheEntityResponse> result;
-    if (waitUntilReplicated) {
-      result = endpoint.beginInvoke().message(message).replicate(true).ackCompleted().invoke();
+  public InvokeFuture<EhcacheEntityResponse> invokeAsync(EhcacheEntityMessage message, boolean replicate)
+      throws MessageCodecException {
+    if (replicate) {
+      return endpoint.beginInvoke().message(message).replicate(true).ackCompleted().invoke();
     } else {
-      result = endpoint.beginInvoke().message(message).invoke();
+      return endpoint.beginInvoke().message(message).invoke();
     }
+  }
 
+  private static <T> T waitFor(InvokeFuture<T> future) throws EntityException {
     boolean interrupted = false;
     try {
       while (true) {
         try {
-          EhcacheEntityResponse response = result.get();
-          if (Type.FAILURE.equals(response.getType())) {
-            /*
-             * The FAILURE cause is a server-side exception lacking client-side stack trace
-             * elements.  The server-side exception must be wrapped in a client-side exception
-             * to provide proper stack trace for analysis.
-             */
-            Exception cause = ((Failure)response).getCause();
-            throw new CachePersistenceException(message.getType() + " error: " + cause.toString(), cause);
-          } else {
-            return response;
-          }
+          return future.get();
         } catch (InterruptedException e) {
           interrupted = true;
         }
@@ -248,113 +250,4 @@ public class EhcacheClientEntity implements Entity {
     }
   }
 
-  /**
-   * Prepares an exception of the specified type from an exception thrown by the
-   * {@link #invokeInternal(EhcacheEntityMessage, boolean)} method.
-   *
-   * @param e the exception from {@code invoke}
-   * @param targetException the desired exception type
-   * @param <E> the desired exception type
-   *
-   * @return an exception of type {@code targetException}
-   *
-   * @throws IllegalArgumentException if {@code targetException} is not {@code IllegalArgumentException},
-   *        {@code e} is a {@link CachePersistenceException}, and {@code e.getCause} is an
-   *        {@code IllegalArgumentException}
-   * @throws IllegalStateException if {@code targetException} is not {@code IllegalStateException},
-   *        {@code e} is a {@link CachePersistenceException}, and {@code e.getCause} is an
-   *        {@code IllegalStateException}
-   * @throws RuntimeException if {@code e} is a {@code RuntimeException} and {@code e} is not of
-   *        type {@code targetException}, or {@code e} is otherwise not a {@code RuntimeException}
-   */
-  private <E extends Exception> E convert(Exception e, Class<E> targetException, Ctor<E> targetExceptionBuilder) {
-    if (targetException.isInstance(e)) {
-      return targetException.cast(e);
-    }
-
-    if (e instanceof CachePersistenceException) {
-      /*
-       * An exception carrying a server-side exception returned from invoke (an EhcacheEntityResponse.Failure).
-       * Since the CachePersistenceException isn't the tarrget exception, unwrap and re-throw/return as
-       * befitting the wrapped exception.  If the CachePersistenceException cause is a recognized type,
-       * the cause is wrapped in a client-side exception of the same type and either returned (if the target
-       * exception type) or thrown.
-       */
-      Throwable cause = e.getCause();
-      RuntimeException clientException;
-      if (cause == null) {
-        clientException = new RuntimeException(e);
-
-      } else if (cause instanceof IllegalArgumentException) {
-        clientException = new IllegalArgumentException(e.getMessage(), cause);
-
-      } else if (cause instanceof IllegalStateException) {
-        clientException = new IllegalStateException(e.getMessage(), cause);
-
-      } else {
-        /*
-         * If not one of the recognized RuntimeExceptions above, wrap the cause in a new targetException and return.
-         */
-        return targetExceptionBuilder.create(e.getMessage(), cause);
-      }
-
-      if (targetException.isInstance(clientException)) {
-        return targetException.cast(clientException);
-      }
-      throw clientException;
-
-    } else if (e instanceof RuntimeException) {
-      /*
-       * An unchecked exception; re-throw.  This is an unexpected exception from invoke message handling.
-       */
-      throw (RuntimeException)e;
-
-    } else {
-      /*
-       * A checked exception other than the targetException; re-throw as a RuntimeException.
-       * This is an unexpected exception from invoke message handling.
-       */
-      throw new RuntimeException(e);
-    }
-  }
-
-  private static final Ctor<ClusteredStoreValidationException> CLUSTERED_STORE_VALIDATION_EXCEPTION_CTOR =
-      new Ctor<ClusteredStoreValidationException>() {
-        @Override
-        public ClusteredStoreValidationException create(String msg, Throwable cause) {
-          return new ClusteredStoreValidationException(cause);
-        }
-      };
-  private static final Ctor<CachePersistenceException> CACHE_PERSISTENCE_EXCEPTION_CTOR =
-      new Ctor<CachePersistenceException>() {
-        @Override
-        public CachePersistenceException create(String msg, Throwable cause) {
-          return new CachePersistenceException(msg, cause);
-        }
-      };
-  private static final Ctor<EhcacheEntityOperationException> EHCACHE_ENTITY_OPERATION_EXCEPTION_CTOR =
-      new Ctor<EhcacheEntityOperationException>() {
-        @Override
-        public EhcacheEntityOperationException create(String msg, Throwable cause) {
-          return new EhcacheEntityOperationException(msg, cause);
-        }
-      };
-  private static final Ctor<IllegalArgumentException> ILLEGAL_ARGUMENT_EXCEPTION_CTOR =
-      new Ctor<IllegalArgumentException>() {
-        @Override
-        public IllegalArgumentException create(String msg, Throwable cause) {
-          return new IllegalArgumentException(msg, cause);
-        }
-      };
-  private static final Ctor<IllegalStateException> ILLEGAL_STATE_EXCEPTION_CTOR =
-      new Ctor<IllegalStateException>() {
-        @Override
-        public IllegalStateException create(String msg, Throwable cause) {
-          return new IllegalStateException(msg, cause);
-        }
-      };
-
-  private interface Ctor<E extends Exception> {
-    E create(String msg, Throwable cause);
-  }
 }

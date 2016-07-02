@@ -17,9 +17,9 @@
 package org.ehcache.clustered.client.internal.store;
 
 import org.ehcache.clustered.client.internal.EhcacheClientEntity;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse;
-import org.ehcache.clustered.common.messages.ServerStoreMessageFactory;
-import org.ehcache.clustered.common.store.Chain;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse;
+import org.ehcache.clustered.common.internal.messages.ServerStoreMessageFactory;
+import org.ehcache.clustered.common.internal.store.Chain;
 
 import java.nio.ByteBuffer;
 
@@ -96,7 +96,7 @@ class NoInvalidationServerStoreProxy implements ServerStoreProxy {
   public void replaceAtHead(long key, Chain expect, Chain update) {
     // TODO: Optimize this method to just send sequences for expect Chain
     try {
-      entity.invoke(messageFactory.replaceAtHeadOperation(key, expect, update), true);
+      entity.invokeAsync(messageFactory.replaceAtHeadOperation(key, expect, update), true);
     } catch (Exception e) {
       throw new ServerStoreProxyException(e);
     }

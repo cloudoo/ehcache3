@@ -16,8 +16,8 @@
 
 package org.ehcache.clustered.server;
 
-import org.ehcache.clustered.common.messages.EhcacheEntityMessage;
-import org.ehcache.clustered.common.messages.EhcacheEntityResponse;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityMessage;
+import org.ehcache.clustered.common.internal.messages.EhcacheEntityResponse;
 import org.terracotta.entity.ActiveServerEntity;
 import org.terracotta.entity.ClientDescriptor;
 import org.terracotta.entity.ConcurrencyStrategy;
@@ -128,8 +128,8 @@ public class ObservableEhcacheServerEntityService
       return activeEntity.getSharedResourcePoolIds();
     }
 
-    public Set<String> getFixedResourcePoolIds() {
-      return activeEntity.getFixedResourcePoolIds();
+    public Set<String> getDedicatedResourcePoolIds() {
+      return activeEntity.getDedicatedResourcePoolIds();
     }
   }
 }
